@@ -1,4 +1,4 @@
-# app_grafos_recomendacion_final_sesion.py
+# app_grafos_recomendacion_final.py
 
 import streamlit as st
 import pandas as pd
@@ -12,9 +12,10 @@ from sklearn.metrics import roc_auc_score, average_precision_score
 import numpy as np
 import random
 import plotly.graph_objects as go
+import os
 
 st.set_page_config(page_title="Recomendador de Amigos Final", layout="wide")
-st.title("💡 Recomendador de Amigos con Link Prediction - Versión Final con Sesión")
+st.title("💡 Recomendador de Amigos con Link Prediction - Final")
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -22,11 +23,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 # Sidebar: Dataset
 # -----------------------------
 st.sidebar.header("📂 Dataset")
-dataset_option = st.sidebar.selectbox(
-    "Selecciona dataset",
-    ["SNAP simulado", "Sintético", "Cargar CSV"]
-)
-
+dataset_option = st.sidebar.selectbox("Selecciona dataset", ["SNAP simulado", "Sintético", "Cargar CSV"])
 uploaded_file = None
 if dataset_option == "Cargar CSV":
     uploaded_file = st.sidebar.file_uploader("Sube tu CSV (src,dst)", type=['csv'])
@@ -72,12 +69,17 @@ nt.show_buttons(filter_=['physics'])
 nt.save_graph("grafo_parcial.html")
 st.components.v1.html(open("grafo_parcial.html",'r').read(), height=500)
 
+# Botón ver grafo completo (nueva pestaña)
+full_graph_path = "grafo_completo.html"
 if st.button("Ver grafo completo"):
     nt_full = Network(height="700px", width="100%", notebook=False)
     nt_full.from_nx(G)
     nt_full.show_buttons(filter_=['physics'])
-    nt_full.save_graph("grafo_completo.html")
-    st.markdown(f"[Abrir grafo completo](grafo_completo.html)")
+    nt_full.save_graph(full_graph_path)
+    if os.path.exists(full_graph_path):
+        st.markdown(f'<a href="{full_graph_path}" target="_blank">Abrir grafo completo en nueva pestaña</a>', unsafe_allow_html=True)
+    else:
+        st.error("Error al generar el grafo completo.")
 
 # -----------------------------
 # Preparar datos PyG
@@ -123,7 +125,7 @@ def get_model(option, num_features, embedding_dim, edge_index=None):
 model = get_model(model_option, num_features, embedding_dim, edge_index=data.edge_index)
 
 # -----------------------------
-# Session state para evitar reinicios
+# Session state
 # -----------------------------
 if "embeddings" not in st.session_state:
     st.session_state.embeddings = None
@@ -131,7 +133,7 @@ if "metrics_df" not in st.session_state:
     st.session_state.metrics_df = None
 
 # -----------------------------
-# Función de entrenamiento y métricas
+# Entrenamiento y métricas
 # -----------------------------
 def train_and_evaluate(_model, data, epochs=50, ks=[1,3,5,10]):
     model = _model.to(device)
@@ -140,7 +142,6 @@ def train_and_evaluate(_model, data, epochs=50, ks=[1,3,5,10]):
     edge_index = data.edge_index.to(device)
     test_edges = data.test_edges.to(device)
 
-    # Entrenamiento
     for epoch in range(epochs):
         model.train()
         optimizer.zero_grad()
@@ -157,7 +158,6 @@ def train_and_evaluate(_model, data, epochs=50, ks=[1,3,5,10]):
         loss.backward()
         optimizer.step()
 
-    # Obtener embeddings
     model.eval()
     with torch.no_grad():
         if isinstance(model, Node2Vec):
@@ -197,6 +197,7 @@ def train_and_evaluate(_model, data, epochs=50, ks=[1,3,5,10]):
         rr_total += 1.0/max(rank,1)
         for k in ks:
             if rank<=k: hits_counts[k]+=1
+
     num_eval = num_test
     hits_at_k = {k:hits_counts[k]/num_eval for k in ks}
     recall_at_k = {k:hits_counts[k]/num_eval for k in ks}
@@ -210,9 +211,6 @@ def train_and_evaluate(_model, data, epochs=50, ks=[1,3,5,10]):
     metrics_table["Valor"] = metrics_table["Valor"].map(lambda x:f"{x:.4f}")
     return z, metrics_table
 
-# -----------------------------
-# Botón entrenamiento y métricas
-# -----------------------------
 if st.button("Entrenar y calcular métricas"):
     with st.spinner("⚡ Entrenando y evaluando..."):
         embeddings, metrics_df = train_and_evaluate(model, data)
@@ -226,7 +224,6 @@ if st.button("Entrenar y calcular métricas"):
 if st.session_state.metrics_df is not None:
     st.subheader("📈 Métricas avanzadas")
     st.dataframe(st.session_state.metrics_df, use_container_width=True)
-
     fig = go.Figure()
     fig.add_trace(go.Bar(
         x=st.session_state.metrics_df["Métrica"],
@@ -239,37 +236,27 @@ if st.session_state.metrics_df is not None:
     st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
-# Recomendaciones de amistad mejoradas
+# Recomendaciones mejoradas
 # -----------------------------
-user_id = st.number_input("ID de usuario", min_value=0, max_value=data.num_nodes - 1, value=0)
+user_id = st.number_input("ID de usuario", min_value=0, max_value=data.num_nodes-1, value=0)
 top_k = st.number_input("Top-K sugerencias", min_value=1, max_value=20, value=5)
-
 
 def recommend_detailed(z, data, user_id, top_k=5):
     edge_index = data.edge_index
     user_emb = z[user_id]
-    scores = torch.matmul(z, user_emb)
-
-    # Filtrar usuarios ya conectados
-    neighbors = set(edge_index[1][edge_index[0] == user_id].cpu().numpy())
+    scores = torch.matmul(z,user_emb)
+    neighbors = set(edge_index[1][edge_index[0]==user_id].cpu().numpy())
     neighbors.add(user_id)
-
-    candidates = [(i, s.item()) for i, s in enumerate(scores) if i not in neighbors]
-    candidates_sorted = sorted(candidates, key=lambda x: x[1], reverse=True)
-
+    candidates = [(i,s.item()) for i,s in enumerate(scores) if i not in neighbors]
+    candidates_sorted = sorted(candidates, key=lambda x:x[1], reverse=True)
     top_users = [c[0] for c in candidates_sorted[:top_k]]
-    all_candidates_df = pd.DataFrame(candidates_sorted, columns=["Usuario", "Score"])
-
+    all_candidates_df = pd.DataFrame(candidates_sorted, columns=["Usuario","Score"])
     return len(candidates_sorted), top_users, all_candidates_df
-
 
 if st.session_state.embeddings is not None:
     total_candidates, top_users, candidates_df = recommend_detailed(st.session_state.embeddings, data, user_id, top_k)
-
     st.subheader(f"🔍 Recomendaciones para usuario {user_id}")
     st.write(f"Total de candidatos disponibles: {total_candidates}")
     st.write(f"Top-{top_k} sugerencias: {top_users}")
-
-    # Mostrar tabla completa de candidatos ordenados por score
     st.write("📋 Lista completa de candidatos ordenados por relevancia:")
     st.dataframe(candidates_df, use_container_width=True)
