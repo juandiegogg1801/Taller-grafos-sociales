@@ -120,6 +120,34 @@ elif model_option == "Node2Vec":
                      context_size=10, walks_per_node=10).to(device)
 
 # -----------------------------------
+# Embeddings y recomendaciones
+# -----------------------------------
+st.subheader("🔍 Recomendaciones de amistad")
+user_id = st.number_input("Ingresa ID de usuario para sugerencias", min_value=0, max_value=data.num_nodes-1, value=0)
+
+def recommend_friends(model, data, user_id, top_k=5):
+    x = data.x.to(device)
+    edge_index = data.edge_index.to(device)
+    if isinstance(model, Node2Vec):
+        z = model().detach()
+    else:
+        z = model(x, edge_index).detach()
+    user_emb = z[user_id]
+    scores = torch.matmul(z, user_emb)
+    # Filtrar usuarios ya conectados
+    neighbors = set(edge_index[1][edge_index[0]==user_id].cpu().numpy())
+    neighbors.add(user_id)
+    candidates = [(i, s.item()) for i, s in enumerate(scores) if i not in neighbors]
+    candidates = sorted(candidates, key=lambda x: x[1], reverse=True)
+    return [c[0] for c in candidates[:top_k]]
+
+if st.button("Generar sugerencias"):
+    top_users = recommend_friends(model, data, user_id)
+    st.write(f"Sugerencias para usuario {user_id}: {top_users}")
+
+
+
+# -----------------------------------
 # Entrenamiento para link prediction
 # -----------------------------------
 def train_link_prediction(model, data, epochs=50):
@@ -147,37 +175,6 @@ def train_link_prediction(model, data, epochs=50):
         optimizer.step()
     return model
 
-st.subheader("⚡ Entrenamiento")
-if st.button("Entrenar modelo"):
-    with st.spinner("Entrenando modelo para link prediction..."):
-        model = train_link_prediction(model, data)
-    st.success("✅ Entrenamiento completado")
-
-# -----------------------------------
-# Embeddings y recomendaciones
-# -----------------------------------
-st.subheader("🔍 Recomendaciones de amistad")
-user_id = st.number_input("Ingresa ID de usuario para sugerencias", min_value=0, max_value=data.num_nodes-1, value=0)
-
-def recommend_friends(model, data, user_id, top_k=5):
-    x = data.x.to(device)
-    edge_index = data.edge_index.to(device)
-    if isinstance(model, Node2Vec):
-        z = model().detach()
-    else:
-        z = model(x, edge_index).detach()
-    user_emb = z[user_id]
-    scores = torch.matmul(z, user_emb)
-    # Filtrar usuarios ya conectados
-    neighbors = set(edge_index[1][edge_index[0]==user_id].cpu().numpy())
-    neighbors.add(user_id)
-    candidates = [(i, s.item()) for i, s in enumerate(scores) if i not in neighbors]
-    candidates = sorted(candidates, key=lambda x: x[1], reverse=True)
-    return [c[0] for c in candidates[:top_k]]
-
-if st.button("Generar sugerencias"):
-    top_users = recommend_friends(model, data, user_id)
-    st.write(f"Sugerencias para usuario {user_id}: {top_users}")
 
 # -----------------------------------
 # 📈 Métricas avanzadas de evaluación (AUC, AP, Hits@K, MRR, Recall@K, Precision@K)
@@ -271,12 +268,55 @@ def evaluate_model(model, data, ks=[1,3,5,10], device=None):
 
     return metrics_table
 
-# -----------------------------------
-# Botón para calcular métricas
-# -----------------------------------
-if st.button("Calcular métricas avanzadas"):
-    with st.spinner("Calculando métricas..."):
+import matplotlib.pyplot as plt
+
+st.subheader("⚡ Entrenamiento y evaluación")
+
+if st.button("Entrenar modelo"):
+    with st.spinner("Entrenando modelo para link prediction..."):
+        model = train_link_prediction(model, data)
+    st.success("✅ Entrenamiento completado")
+
+    # --- Calcular métricas automáticamente ---
+    with st.spinner("Calculando métricas avanzadas..."):
         metrics_df = evaluate_model(model, data)
-    st.success("✅ Métricas calculadas correctamente")
+
+    st.subheader("📈 Resultados de evaluación")
     st.dataframe(metrics_df, use_container_width=True)
 
+    # --- Visualización gráfica de métricas principales ---
+    st.subheader("📊 Visualización de métricas clave")
+
+    # Extraer métricas clave
+    metrics_to_plot = metrics_df[metrics_df["Métrica"].isin(
+        ["AUC", "AP", "MRR", "Hits@10", "Recall@10", "Precision@10"]
+    )].copy()
+    metrics_to_plot["Valor"] = metrics_to_plot["Valor"].astype(float)
+
+    # Colores personalizados por tipo de métrica
+    color_map = {
+        "AUC": "#1f77b4",  # Azul
+        "AP": "#1f77b4",  # Azul
+        "MRR": "#ff7f0e",  # Naranja
+        "Hits@10": "#2ca02c",  # Verde
+        "Recall@10": "#2ca02c",  # Verde
+        "Precision@10": "#2ca02c"  # Verde
+    }
+    bar_colors = [color_map[m] for m in metrics_to_plot["Métrica"]]
+
+    # Crear gráfico
+    fig, ax = plt.subplots(figsize=(8, 4))
+    bars = ax.bar(metrics_to_plot["Métrica"], metrics_to_plot["Valor"], color=bar_colors, edgecolor='black')
+
+    ax.set_ylim(0, 1)
+    ax.set_ylabel("Valor")
+    ax.set_title("Desempeño del modelo en métricas clave", fontsize=13)
+    ax.grid(axis='y', linestyle='--', alpha=0.6)
+
+    # Etiquetas numéricas sobre las barras
+    for bar in bars:
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width() / 2, height + 0.02, f"{height:.3f}",
+                ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+    st.pyplot(fig)
