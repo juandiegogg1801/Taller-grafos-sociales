@@ -1,4 +1,4 @@
-# app_grafos_recomendacion_avanzado.py
+# app_grafos_recomendacion_final_corregido.py
 
 import streamlit as st
 import pandas as pd
@@ -11,39 +11,47 @@ from torch_geometric.utils import negative_sampling
 from sklearn.metrics import roc_auc_score, average_precision_score
 import numpy as np
 import random
+import plotly.graph_objects as go
 
-st.set_page_config(page_title="Recomendador de Amigos Avanzado", layout="wide")
-st.title("💡 Recomendador de Amigos con Link Prediction")
+st.set_page_config(page_title="Recomendador de Amigos Final", layout="wide")
+st.title("💡 Recomendador de Amigos con Link Prediction - Versión Final Corregida")
 
-# -----------------------------------
-# Sidebar: Cargar dataset
-# -----------------------------------
-st.sidebar.header("📂 Cargar dataset")
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# -----------------------------
+# Sidebar: Dataset
+# -----------------------------
+st.sidebar.header("📂 Dataset")
 dataset_option = st.sidebar.selectbox(
-    "Selecciona un dataset predefinido o carga uno propio",
-    ["SNAP: Facebook Social Circles", "Sintético", "Cargar CSV"]
+    "Selecciona dataset",
+    ["SNAP simulado", "Sintético", "Cargar CSV"]
 )
 
+uploaded_file = None
 if dataset_option == "Cargar CSV":
-    uploaded_file = st.sidebar.file_uploader("Sube tu CSV (src, dst)", type=["csv"])
-    if uploaded_file:
-        df_edges = pd.read_csv(uploaded_file)
-else:
-    st.sidebar.write(f"Dataset seleccionado: {dataset_option}")
-    # Para ejemplo, generamos un grafo sintético
-    df_edges = pd.DataFrame({
-        'src': np.random.randint(0, 100, 500),
-        'dst': np.random.randint(0, 100, 500)
-    })
+    uploaded_file = st.sidebar.file_uploader("Sube tu CSV (src,dst)", type=['csv'])
 
-# -----------------------------------
-# Construir grafo y resumen
-# -----------------------------------
-G = nx.from_pandas_edgelist(df_edges, 'src', 'dst')
+@st.cache_data
+def load_dataset(option, uploaded_file=None):
+    if option == "Cargar CSV" and uploaded_file:
+        df = pd.read_csv(uploaded_file)
+    elif option == "Sintético":
+        df = pd.DataFrame({'src': np.random.randint(0,100,500),
+                           'dst': np.random.randint(0,100,500)})
+    else:  # SNAP simulado
+        df = pd.DataFrame({'src': np.random.randint(0,200,1000),
+                           'dst': np.random.randint(0,200,1000)})
+    G = nx.from_pandas_edgelist(df, 'src', 'dst')
+    return df, G
+
+df_edges, G = load_dataset(dataset_option, uploaded_file)
+
+# -----------------------------
+# Resumen del grafo
+# -----------------------------
 st.subheader("📊 Resumen del grafo")
 st.write(f"Nodos: {G.number_of_nodes()}, Aristas: {G.number_of_edges()}, Densidad: {nx.density(G):.4f}")
 
-# Comunidades con Louvain
 try:
     import community as community_louvain
     partition = community_louvain.best_partition(G)
@@ -51,19 +59,18 @@ try:
 except ImportError:
     st.write("Instala `python-louvain` para detección de comunidades.")
 
-# -----------------------------------
+# -----------------------------
 # Visualización parcial
-# -----------------------------------
-st.subheader("🕸️ Visualización parcial del grafo")
-max_nodes = st.slider("Número de nodos a mostrar", 100, 1000, 500)
+# -----------------------------
+st.subheader("🕸️ Grafo parcial")
+max_nodes = st.slider("Nodos a mostrar", 100, 1000, 500)
 sub_nodes = list(G.nodes())[:max_nodes]
 subG = G.subgraph(sub_nodes)
-
 nt = Network(height="500px", width="100%", notebook=False)
 nt.from_nx(subG)
 nt.show_buttons(filter_=['physics'])
 nt.save_graph("grafo_parcial.html")
-st.components.v1.html(open("grafo_parcial.html", 'r').read(), height=500)
+st.components.v1.html(open("grafo_parcial.html",'r').read(), height=500)
 
 if st.button("Ver grafo completo"):
     nt_full = Network(height="700px", width="100%", notebook=False)
@@ -72,26 +79,21 @@ if st.button("Ver grafo completo"):
     nt_full.save_graph("grafo_completo.html")
     st.markdown(f"[Abrir grafo completo](grafo_completo.html)")
 
-# -----------------------------------
-# Preparar datos para PyG
-# -----------------------------------
-node_mapping = {n: i for i, n in enumerate(G.nodes())}
-edges = torch.tensor([[node_mapping[u], node_mapping[v]] for u, v in G.edges()], dtype=torch.long).t()
+# -----------------------------
+# Preparar datos PyG
+# -----------------------------
+node_mapping = {n:i for i,n in enumerate(G.nodes())}
+edges = torch.tensor([[node_mapping[u], node_mapping[v]] for u,v in G.edges()], dtype=torch.long).t()
 data = Data(edge_index=edges)
-
-# Atributos de nodo dummy si no existen
 if not hasattr(data, 'x') or data.x is None:
-    data.x = torch.ones((data.num_nodes, 1), dtype=torch.float)
+    data.x = torch.ones((data.num_nodes,1),dtype=torch.float)
 
-# -----------------------------------
-# Separar train/test edges
-# -----------------------------------
 def train_test_split_edges(data, test_ratio=0.2):
-    edges = data.edge_index.t().tolist()
-    random.shuffle(edges)
-    num_test = int(len(edges) * test_ratio)
-    test_edges = edges[:num_test]
-    train_edges = edges[num_test:]
+    edges_list = data.edge_index.t().tolist()
+    random.shuffle(edges_list)
+    num_test = int(len(edges_list)*test_ratio)
+    test_edges = edges_list[:num_test]
+    train_edges = edges_list[num_test:]
     train_edge_index = torch.tensor(train_edges, dtype=torch.long).t()
     data_train = Data(edge_index=train_edge_index, x=data.x)
     data_train.test_edges = torch.tensor(test_edges, dtype=torch.long)
@@ -99,63 +101,39 @@ def train_test_split_edges(data, test_ratio=0.2):
 
 data = train_test_split_edges(data)
 
-# -----------------------------------
-# Modelo GNN
-# -----------------------------------
-st.subheader("🧠 Selección de modelo de grafo")
-model_option = st.selectbox("Modelo GNN", ["GCN", "GraphSAGE", "GAT", "Node2Vec"])
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
-num_features = data.x.shape[1]
+# -----------------------------
+# Selección modelo
+# -----------------------------
+st.subheader("🧠 Modelo GNN")
+model_option = st.selectbox("Selecciona modelo", ["GCN","GraphSAGE","GAT","Node2Vec"])
 embedding_dim = 64
+num_features = data.x.shape[1]
 
-if model_option == "GCN":
-    model = GCNConv(num_features, embedding_dim).to(device)
-elif model_option == "GraphSAGE":
-    model = SAGEConv(num_features, embedding_dim).to(device)
-elif model_option == "GAT":
-    model = GATConv(num_features, embedding_dim, heads=2).to(device)
-elif model_option == "Node2Vec":
-    model = Node2Vec(data.edge_index, embedding_dim=embedding_dim, walk_length=20,
-                     context_size=10, walks_per_node=10).to(device)
+def get_model(option, num_features, embedding_dim, edge_index=None):
+    if option=="GCN":
+        return GCNConv(num_features, embedding_dim)
+    elif option=="GraphSAGE":
+        return SAGEConv(num_features, embedding_dim)
+    elif option=="GAT":
+        return GATConv(num_features, embedding_dim, heads=2)
+    elif option=="Node2Vec":
+        return Node2Vec(edge_index, embedding_dim=embedding_dim, walk_length=20,
+                        context_size=10, walks_per_node=10)
 
-# -----------------------------------
-# Embeddings y recomendaciones
-# -----------------------------------
-st.subheader("🔍 Recomendaciones de amistad")
-user_id = st.number_input("Ingresa ID de usuario para sugerencias", min_value=0, max_value=data.num_nodes-1, value=0)
+# ⚠ No cacheamos el modelo
+model = get_model(model_option, num_features, embedding_dim, edge_index=data.edge_index)
 
-def recommend_friends(model, data, user_id, top_k=5):
-    x = data.x.to(device)
-    edge_index = data.edge_index.to(device)
-    if isinstance(model, Node2Vec):
-        z = model().detach()
-    else:
-        z = model(x, edge_index).detach()
-    user_emb = z[user_id]
-    scores = torch.matmul(z, user_emb)
-    # Filtrar usuarios ya conectados
-    neighbors = set(edge_index[1][edge_index[0]==user_id].cpu().numpy())
-    neighbors.add(user_id)
-    candidates = [(i, s.item()) for i, s in enumerate(scores) if i not in neighbors]
-    candidates = sorted(candidates, key=lambda x: x[1], reverse=True)
-    return [c[0] for c in candidates[:top_k]]
-
-if st.button("Generar sugerencias"):
-    top_users = recommend_friends(model, data, user_id)
-    st.write(f"Sugerencias para usuario {user_id}: {top_users}")
-
-
-
-# -----------------------------------
-# Entrenamiento para link prediction
-# -----------------------------------
-def train_link_prediction(model, data, epochs=50):
+# -----------------------------
+# Entrenamiento y métricas avanzadas
+# -----------------------------
+def train_and_evaluate(_model, data, epochs=50, ks=[1,3,5,10]):
+    model = _model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     x = data.x.to(device)
     edge_index = data.edge_index.to(device)
     test_edges = data.test_edges.to(device)
 
+    # Entrenamiento
     for epoch in range(epochs):
         model.train()
         optimizer.zero_grad()
@@ -163,9 +141,7 @@ def train_link_prediction(model, data, epochs=50):
             loss = model.loss()
         else:
             z = model(x, edge_index)
-            # Sample negative edges
             neg_edge_index = negative_sampling(edge_index=edge_index, num_nodes=x.size(0), num_neg_samples=edge_index.size(1))
-            # Concatenate positive y=1 and negative y=0
             pos_out = (z[edge_index[0]] * z[edge_index[1]]).sum(dim=1)
             neg_out = (z[neg_edge_index[0]] * z[neg_edge_index[1]]).sum(dim=1)
             out = torch.cat([pos_out, neg_out])
@@ -173,150 +149,93 @@ def train_link_prediction(model, data, epochs=50):
             loss = torch.nn.BCEWithLogitsLoss()(out, y)
         loss.backward()
         optimizer.step()
-    return model
-
-
-# -----------------------------------
-# 📈 Métricas avanzadas de evaluación (AUC, AP, Hits@K, MRR, Recall@K, Precision@K)
-# -----------------------------------
-st.subheader("📈 Métricas de evaluación (Link Prediction avanzadas)")
-
-import pandas as pd
-from torch_geometric.utils import negative_sampling
-from sklearn.metrics import roc_auc_score, average_precision_score
-
-def evaluate_model(model, data, ks=[1,3,5,10], device=None):
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    model = model.to(device)
-    x = data.x.to(device)
-    edge_index = data.edge_index.to(device)
-    test_edges = data.test_edges.to(device)
 
     # Obtener embeddings
-    if isinstance(model, Node2Vec):
-        z = model().detach()
-    else:
-        model.eval()
-        with torch.no_grad():
+    model.eval()
+    with torch.no_grad():
+        if isinstance(model, Node2Vec):
+            z = model().detach()
+        else:
             z = model(x, edge_index).detach()
 
+    # --- Métricas avanzadas ---
     num_nodes = z.size(0)
     num_test = test_edges.size(0)
-
-    # --- Métricas globales (AUC, AP) ---
     pos_scores = (z[test_edges[:,0]] * z[test_edges[:,1]]).sum(dim=1).cpu()
-
-    neg_edge_index = negative_sampling(
-        edge_index=edge_index, num_nodes=num_nodes, num_neg_samples=num_test
-    ).to(device)
+    neg_edge_index = negative_sampling(edge_index=edge_index, num_nodes=num_nodes, num_neg_samples=num_test).to(device)
     neg_scores = (z[neg_edge_index[0]] * z[neg_edge_index[1]]).sum(dim=1).cpu()
-
-    y_true = torch.cat([
-        torch.ones(pos_scores.size(0)),
-        torch.zeros(neg_scores.size(0))
-    ])
+    y_true = torch.cat([torch.ones(pos_scores.size(0)), torch.zeros(neg_scores.size(0))])
     y_scores = torch.cat([pos_scores, neg_scores])
-
     auc = roc_auc_score(y_true, y_scores)
     ap = average_precision_score(y_true, y_scores)
 
-    # --- Métricas por consulta (Hits@K, Recall@K, Precision@K, MRR) ---
-    train_adj = {i: set() for i in range(num_nodes)}
-    for u, v in edge_index.cpu().T.numpy():
+    train_adj = {i:set() for i in range(num_nodes)}
+    for u,v in edge_index.cpu().T.numpy():
         train_adj[u].add(v)
         train_adj[v].add(u)
 
-    ks_sorted = sorted(ks)
-    hits_counts = {k: 0 for k in ks_sorted}
+    hits_counts = {k:0 for k in ks}
     rr_total = 0.0
-
     for i in range(num_test):
-        u, v = test_edges[i]
-        u, v = int(u.item()), int(v.item())
-        pos_score = (z[u] * z[v]).sum().item()
-
-        scores = torch.matmul(z, z[u]).cpu()
-        mask = torch.zeros(num_nodes, dtype=torch.bool)
-        for n in train_adj[u]:
-            mask[n] = True
-        mask[u] = True
-        scores[mask] = float("-inf")
-
-        rank = int((scores >= pos_score).sum().item())
-        if scores[v] == float("-inf"):
-            continue
-
-        rr_total += 1.0 / max(rank, 1)
-        for k in ks_sorted:
-            if rank <= k:
-                hits_counts[k] += 1
-
+        u,v = test_edges[i]
+        u,v = int(u.item()), int(v.item())
+        pos_score = (z[u]*z[v]).sum().item()
+        scores = torch.matmul(z,z[u]).cpu()
+        mask = torch.zeros(num_nodes,dtype=torch.bool)
+        for n in train_adj[u]: mask[n]=True
+        mask[u]=True
+        scores[mask]=float("-inf")
+        rank = int((scores>=pos_score).sum().item())
+        if scores[v]==float("-inf"): continue
+        rr_total += 1.0/max(rank,1)
+        for k in ks:
+            if rank<=k: hits_counts[k]+=1
     num_eval = num_test
-    hits_at_k = {k: hits_counts[k] / num_eval for k in ks_sorted}
-    recall_at_k = {k: hits_counts[k] / num_eval for k in ks_sorted}
-    precision_at_k = {k: hits_counts[k] / (k * num_eval) for k in ks_sorted}
-    mrr = rr_total / num_eval
+    hits_at_k = {k:hits_counts[k]/num_eval for k in ks}
+    recall_at_k = {k:hits_counts[k]/num_eval for k in ks}
+    precision_at_k = {k:hits_counts[k]/(k*num_eval) for k in ks}
+    mrr = rr_total/num_eval
 
-    # --- Organizar en DataFrame ---
     metrics_table = pd.DataFrame({
-        "Métrica": ["AUC", "AP", "MRR"] + [f"Hits@{k}" for k in ks_sorted] + [f"Recall@{k}" for k in ks_sorted] + [f"Precision@{k}" for k in ks_sorted],
-        "Valor": [auc, ap, mrr] + [hits_at_k[k] for k in ks_sorted] + [recall_at_k[k] for k in ks_sorted] + [precision_at_k[k] for k in ks_sorted]
+        "Métrica": ["AUC","AP","MRR"] + [f"Hits@{k}" for k in ks] + [f"Recall@{k}" for k in ks] + [f"Precision@{k}" for k in ks],
+        "Valor": [auc,ap,mrr] + [hits_at_k[k] for k in ks] + [recall_at_k[k] for k in ks] + [precision_at_k[k] for k in ks]
     })
     metrics_table["Valor"] = metrics_table["Valor"].map(lambda x: f"{x:.4f}")
+    return z, metrics_table
 
-    return metrics_table
+if st.button("Entrenar y calcular métricas"):
+    with st.spinner("Entrenando y evaluando..."):
+        embeddings, metrics_df = train_and_evaluate(model, data)
+    st.subheader("📈 Métricas avanzadas")
+    st.dataframe(metrics_df,use_container_width=True)
 
-import matplotlib.pyplot as plt
+    # Gráfico interactivo
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=metrics_df["Métrica"],
+        y=metrics_df["Valor"].astype(float),
+        text=metrics_df["Valor"],
+        textposition='outside',
+        marker_color='blue'
+    ))
+    fig.update_layout(yaxis=dict(range=[0,1], title="Valor"),
+                      title="Métricas avanzadas - Link Prediction",
+                      template="plotly_white")
+    st.plotly_chart(fig,use_container_width=True)
 
-st.subheader("⚡ Entrenamiento y evaluación")
+    # Recomendaciones de amistad
+    st.subheader("🔍 Recomendaciones de amistad")
+    user_id = st.number_input("ID de usuario", min_value=0, max_value=data.num_nodes-1, value=0)
+    top_k = st.number_input("Top-K sugerencias", min_value=1, max_value=20, value=5)
 
-if st.button("Entrenar modelo"):
-    with st.spinner("Entrenando modelo para link prediction..."):
-        model = train_link_prediction(model, data)
-    st.success("✅ Entrenamiento completado")
+    def recommend(embeddings, data, user_id, top_k=5):
+        scores = torch.matmul(embeddings, embeddings[user_id])
+        edge_index = data.edge_index
+        neighbors = set(edge_index[1][edge_index[0]==user_id].cpu().numpy())
+        neighbors.add(user_id)
+        candidates = [(i,s.item()) for i,s in enumerate(scores) if i not in neighbors]
+        candidates = sorted(candidates,key=lambda x:x[1],reverse=True)
+        return [c[0] for c in candidates[:top_k]]
 
-    # --- Calcular métricas automáticamente ---
-    with st.spinner("Calculando métricas avanzadas..."):
-        metrics_df = evaluate_model(model, data)
-
-    st.subheader("📈 Resultados de evaluación")
-    st.dataframe(metrics_df, use_container_width=True)
-
-    # --- Visualización gráfica de métricas principales ---
-    st.subheader("📊 Visualización de métricas clave")
-
-    # Extraer métricas clave
-    metrics_to_plot = metrics_df[metrics_df["Métrica"].isin(
-        ["AUC", "AP", "MRR", "Hits@10", "Recall@10", "Precision@10"]
-    )].copy()
-    metrics_to_plot["Valor"] = metrics_to_plot["Valor"].astype(float)
-
-    # Colores personalizados por tipo de métrica
-    color_map = {
-        "AUC": "#1f77b4",  # Azul
-        "AP": "#1f77b4",  # Azul
-        "MRR": "#ff7f0e",  # Naranja
-        "Hits@10": "#2ca02c",  # Verde
-        "Recall@10": "#2ca02c",  # Verde
-        "Precision@10": "#2ca02c"  # Verde
-    }
-    bar_colors = [color_map[m] for m in metrics_to_plot["Métrica"]]
-
-    # Crear gráfico
-    fig, ax = plt.subplots(figsize=(8, 4))
-    bars = ax.bar(metrics_to_plot["Métrica"], metrics_to_plot["Valor"], color=bar_colors, edgecolor='black')
-
-    ax.set_ylim(0, 1)
-    ax.set_ylabel("Valor")
-    ax.set_title("Desempeño del modelo en métricas clave", fontsize=13)
-    ax.grid(axis='y', linestyle='--', alpha=0.6)
-
-    # Etiquetas numéricas sobre las barras
-    for bar in bars:
-        height = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width() / 2, height + 0.02, f"{height:.3f}",
-                ha='center', va='bottom', fontsize=9, fontweight='bold')
-
-    st.pyplot(fig)
+    top_users = recommend(embeddings, data, user_id, top_k)
+    st.write(f"Sugerencias para usuario {user_id}: {top_users}")
