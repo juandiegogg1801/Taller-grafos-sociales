@@ -1,10 +1,10 @@
 streamlit
 pandas
 numpy
-networkx
 torch
-torchvision
 torch-geometric
 scikit-learn
+networkx
 python-louvain
+pyvis
 plotly

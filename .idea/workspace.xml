@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fbac3473-17bd-4eba-a292-30816d876da9" name="Changes" comment="tercera version taller">
+    <list default="true" id="fbac3473-17bd-4eba-a292-30816d876da9" name="Changes" comment="cuarta version taller">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/app.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
@@ -17,18 +17,18 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
-  "lastFilter": {
-    "state": "OPEN",
-    "assignee": "juandiegogg1801"
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;juandiegogg1801&quot;
   }
-}]]></component>
-  <component name="GithubPullRequestsUISettings"><![CDATA[{
-  "selectedUrlAndAccountId": {
-    "url": "https://github.com/juandiegogg1801/Taller-grafos-sociales.git",
-    "accountId": "1aa040a7-6463-4674-a3c2-ea59f59ac57a"
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/juandiegogg1801/Taller-grafos-sociales.git&quot;,
+    &quot;accountId&quot;: &quot;1aa040a7-6463-4674-a3c2-ea59f59ac57a&quot;
   }
-}]]></component>
+}</component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 5
 }</component>
@@ -80,7 +80,9 @@
       <workItem from="1761070322869" duration="396000" />
       <workItem from="1761070767491" duration="2418000" />
       <workItem from="1761073220324" duration="365000" />
-      <workItem from="1761073612495" duration="2821000" />
+      <workItem from="1761073612495" duration="2859000" />
+      <workItem from="1761079266451" duration="2163000" />
+      <workItem from="1761082175695" duration="1043000" />
     </task>
     <task id="LOCAL-00001" summary="primera version taller">
       <option name="closed" value="true" />
@@ -106,7 +108,15 @@
       <option name="project" value="LOCAL" />
       <updated>1761075477898</updated>
     </task>
-    <option name="localTasksCounter" value="4" />
+    <task id="LOCAL-00004" summary="cuarta version taller">
+      <option name="closed" value="true" />
+      <created>1761076445285</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1761076445285</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -116,7 +126,8 @@
     <MESSAGE value="primera version taller" />
     <MESSAGE value="segunda version taller" />
     <MESSAGE value="tercera version taller" />
-    <option name="LAST_COMMIT_MESSAGE" value="tercera version taller" />
+    <MESSAGE value="cuarta version taller" />
+    <option name="LAST_COMMIT_MESSAGE" value="cuarta version taller" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/app_recomendacion_grafos$app.coverage" NAME="app Coverage Results" MODIFIED="1761071710000" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
