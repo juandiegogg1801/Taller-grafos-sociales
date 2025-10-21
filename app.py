@@ -239,21 +239,37 @@ if st.session_state.metrics_df is not None:
     st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
-# Recomendaciones de amistad
+# Recomendaciones de amistad mejoradas
 # -----------------------------
-user_id = st.number_input("ID de usuario", min_value=0, max_value=data.num_nodes-1, value=0)
+user_id = st.number_input("ID de usuario", min_value=0, max_value=data.num_nodes - 1, value=0)
 top_k = st.number_input("Top-K sugerencias", min_value=1, max_value=20, value=5)
 
-def recommend(z, data, user_id, top_k=5):
+
+def recommend_detailed(z, data, user_id, top_k=5):
     edge_index = data.edge_index
     user_emb = z[user_id]
     scores = torch.matmul(z, user_emb)
-    neighbors = set(edge_index[1][edge_index[0]==user_id].cpu().numpy())
+
+    # Filtrar usuarios ya conectados
+    neighbors = set(edge_index[1][edge_index[0] == user_id].cpu().numpy())
     neighbors.add(user_id)
-    candidates = [(i,s.item()) for i,s in enumerate(scores) if i not in neighbors]
-    candidates = sorted(candidates, key=lambda x:x[1], reverse=True)
-    return [c[0] for c in candidates[:top_k]]
+
+    candidates = [(i, s.item()) for i, s in enumerate(scores) if i not in neighbors]
+    candidates_sorted = sorted(candidates, key=lambda x: x[1], reverse=True)
+
+    top_users = [c[0] for c in candidates_sorted[:top_k]]
+    all_candidates_df = pd.DataFrame(candidates_sorted, columns=["Usuario", "Score"])
+
+    return len(candidates_sorted), top_users, all_candidates_df
+
 
 if st.session_state.embeddings is not None:
-    top_users = recommend(st.session_state.embeddings, data, user_id, top_k)
-    st.write(f"Sugerencias para usuario {user_id}: {top_users}")
+    total_candidates, top_users, candidates_df = recommend_detailed(st.session_state.embeddings, data, user_id, top_k)
+
+    st.subheader(f"🔍 Recomendaciones para usuario {user_id}")
+    st.write(f"Total de candidatos disponibles: {total_candidates}")
+    st.write(f"Top-{top_k} sugerencias: {top_users}")
+
+    # Mostrar tabla completa de candidatos ordenados por score
+    st.write("📋 Lista completa de candidatos ordenados por relevancia:")
+    st.dataframe(candidates_df, use_container_width=True)
