@@ -1,0 +1,10 @@
+streamlit
+pandas
+numpy
+networkx
+pyvis
+torch
+torchvision
+torch-geometric
+scikit-learn
+python-louvain
