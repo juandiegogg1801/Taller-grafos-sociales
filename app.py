@@ -1,4 +1,4 @@
-# app_grafos_recomendacion_final_corregido.py
+# app_grafos_recomendacion_final_sesion.py
 
 import streamlit as st
 import pandas as pd
@@ -14,7 +14,7 @@ import random
 import plotly.graph_objects as go
 
 st.set_page_config(page_title="Recomendador de Amigos Final", layout="wide")
-st.title("💡 Recomendador de Amigos con Link Prediction - Versión Final Corregida")
+st.title("💡 Recomendador de Amigos con Link Prediction - Versión Final con Sesión")
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -120,11 +120,18 @@ def get_model(option, num_features, embedding_dim, edge_index=None):
         return Node2Vec(edge_index, embedding_dim=embedding_dim, walk_length=20,
                         context_size=10, walks_per_node=10)
 
-# ⚠ No cacheamos el modelo
 model = get_model(model_option, num_features, embedding_dim, edge_index=data.edge_index)
 
 # -----------------------------
-# Entrenamiento y métricas avanzadas
+# Session state para evitar reinicios
+# -----------------------------
+if "embeddings" not in st.session_state:
+    st.session_state.embeddings = None
+if "metrics_df" not in st.session_state:
+    st.session_state.metrics_df = None
+
+# -----------------------------
+# Función de entrenamiento y métricas
 # -----------------------------
 def train_and_evaluate(_model, data, epochs=50, ks=[1,3,5,10]):
     model = _model.to(device)
@@ -158,7 +165,7 @@ def train_and_evaluate(_model, data, epochs=50, ks=[1,3,5,10]):
         else:
             z = model(x, edge_index).detach()
 
-    # --- Métricas avanzadas ---
+    # --- Métricas ---
     num_nodes = z.size(0)
     num_test = test_edges.size(0)
     pos_scores = (z[test_edges[:,0]] * z[test_edges[:,1]]).sum(dim=1).cpu()
@@ -200,42 +207,53 @@ def train_and_evaluate(_model, data, epochs=50, ks=[1,3,5,10]):
         "Métrica": ["AUC","AP","MRR"] + [f"Hits@{k}" for k in ks] + [f"Recall@{k}" for k in ks] + [f"Precision@{k}" for k in ks],
         "Valor": [auc,ap,mrr] + [hits_at_k[k] for k in ks] + [recall_at_k[k] for k in ks] + [precision_at_k[k] for k in ks]
     })
-    metrics_table["Valor"] = metrics_table["Valor"].map(lambda x: f"{x:.4f}")
+    metrics_table["Valor"] = metrics_table["Valor"].map(lambda x:f"{x:.4f}")
     return z, metrics_table
 
+# -----------------------------
+# Botón entrenamiento y métricas
+# -----------------------------
 if st.button("Entrenar y calcular métricas"):
-    with st.spinner("Entrenando y evaluando..."):
+    with st.spinner("⚡ Entrenando y evaluando..."):
         embeddings, metrics_df = train_and_evaluate(model, data)
-    st.subheader("📈 Métricas avanzadas")
-    st.dataframe(metrics_df,use_container_width=True)
+        st.session_state.embeddings = embeddings
+        st.session_state.metrics_df = metrics_df
+    st.success("✅ Entrenamiento y métricas completadas")
 
-    # Gráfico interactivo
+# -----------------------------
+# Mostrar métricas si existen
+# -----------------------------
+if st.session_state.metrics_df is not None:
+    st.subheader("📈 Métricas avanzadas")
+    st.dataframe(st.session_state.metrics_df, use_container_width=True)
+
     fig = go.Figure()
     fig.add_trace(go.Bar(
-        x=metrics_df["Métrica"],
-        y=metrics_df["Valor"].astype(float),
-        text=metrics_df["Valor"],
+        x=st.session_state.metrics_df["Métrica"],
+        y=st.session_state.metrics_df["Valor"].astype(float),
+        text=st.session_state.metrics_df["Valor"],
         textposition='outside',
         marker_color='blue'
     ))
-    fig.update_layout(yaxis=dict(range=[0,1], title="Valor"),
-                      title="Métricas avanzadas - Link Prediction",
-                      template="plotly_white")
-    st.plotly_chart(fig,use_container_width=True)
+    fig.update_layout(yaxis=dict(range=[0,1], title="Valor"), title="Métricas Link Prediction", template="plotly_white")
+    st.plotly_chart(fig, use_container_width=True)
 
-    # Recomendaciones de amistad
-    st.subheader("🔍 Recomendaciones de amistad")
-    user_id = st.number_input("ID de usuario", min_value=0, max_value=data.num_nodes-1, value=0)
-    top_k = st.number_input("Top-K sugerencias", min_value=1, max_value=20, value=5)
+# -----------------------------
+# Recomendaciones de amistad
+# -----------------------------
+user_id = st.number_input("ID de usuario", min_value=0, max_value=data.num_nodes-1, value=0)
+top_k = st.number_input("Top-K sugerencias", min_value=1, max_value=20, value=5)
 
-    def recommend(embeddings, data, user_id, top_k=5):
-        scores = torch.matmul(embeddings, embeddings[user_id])
-        edge_index = data.edge_index
-        neighbors = set(edge_index[1][edge_index[0]==user_id].cpu().numpy())
-        neighbors.add(user_id)
-        candidates = [(i,s.item()) for i,s in enumerate(scores) if i not in neighbors]
-        candidates = sorted(candidates,key=lambda x:x[1],reverse=True)
-        return [c[0] for c in candidates[:top_k]]
+def recommend(z, data, user_id, top_k=5):
+    edge_index = data.edge_index
+    user_emb = z[user_id]
+    scores = torch.matmul(z, user_emb)
+    neighbors = set(edge_index[1][edge_index[0]==user_id].cpu().numpy())
+    neighbors.add(user_id)
+    candidates = [(i,s.item()) for i,s in enumerate(scores) if i not in neighbors]
+    candidates = sorted(candidates, key=lambda x:x[1], reverse=True)
+    return [c[0] for c in candidates[:top_k]]
 
-    top_users = recommend(embeddings, data, user_id, top_k)
+if st.session_state.embeddings is not None:
+    top_users = recommend(st.session_state.embeddings, data, user_id, top_k)
     st.write(f"Sugerencias para usuario {user_id}: {top_users}")

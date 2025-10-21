@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fbac3473-17bd-4eba-a292-30816d876da9" name="Changes" comment="sexta version estable">
+    <list default="true" id="fbac3473-17bd-4eba-a292-30816d876da9" name="Changes" comment="septima version estable">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/app.py" afterDir="false" />
     </list>
@@ -81,7 +81,7 @@
       <workItem from="1761073220324" duration="365000" />
       <workItem from="1761073612495" duration="2859000" />
       <workItem from="1761079266451" duration="2163000" />
-      <workItem from="1761082175695" duration="2759000" />
+      <workItem from="1761082175695" duration="3368000" />
     </task>
     <task id="LOCAL-00001" summary="primera version taller">
       <option name="closed" value="true" />
@@ -131,7 +131,15 @@
       <option name="project" value="LOCAL" />
       <updated>1761084697029</updated>
     </task>
-    <option name="localTasksCounter" value="7" />
+    <task id="LOCAL-00007" summary="septima version estable">
+      <option name="closed" value="true" />
+      <created>1761085108136</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1761085108136</updated>
+    </task>
+    <option name="localTasksCounter" value="8" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -144,7 +152,8 @@
     <MESSAGE value="cuarta version taller" />
     <MESSAGE value="quinta version estable" />
     <MESSAGE value="sexta version estable" />
-    <option name="LAST_COMMIT_MESSAGE" value="sexta version estable" />
+    <MESSAGE value="septima version estable" />
+    <option name="LAST_COMMIT_MESSAGE" value="septima version estable" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/app_recomendacion_grafos$app.coverage" NAME="app Coverage Results" MODIFIED="1761071710000" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
