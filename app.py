@@ -1,5 +1,3 @@
-# app_grafos_recomendacion_final.py
-
 import streamlit as st
 import pandas as pd
 import networkx as nx
