@@ -75,7 +75,7 @@ try:
 except Exception as e:
     st.warning(f"No se pudo mostrar el grafo: {e}")
 
-# El resto de la app debe mostrarse aunque falle la visualización del grafo
+# El resto de la app debe mostrarse aunque falle la visualización
 
 # -----------------------------
 # Preparar datos PyG
