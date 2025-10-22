@@ -1,10 +1,27 @@
-streamlit
+# --- Core ML stack ---
+torch==2.9.0+cu128
+torchvision==0.24.0+cu128
+torchaudio==2.9.0+cu128
+--find-links https://download.pytorch.org/whl/cu128/torch_stable.html
+
+# --- PyTorch Geometric ---
+torch-geometric==2.7.0
+torch-scatter
+torch-sparse
+torch-cluster
+torch-spline-conv
+--find-links https://data.pyg.org/whl/torch-2.9.0+cu128.html
+
+# --- Data & metrics ---
 pandas
 numpy
-torch
-torch-geometric
 scikit-learn
 networkx
 python-louvain
-pyvis
+
+# --- Web app ---
+streamlit
+
+# --- Utils ---
+matplotlib
 plotly
