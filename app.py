@@ -222,7 +222,7 @@ if st.session_state.metrics_df is not None:
     st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
-# Recomendaciones mejoradas
+# Recomendaciones
 # -----------------------------
 user_id = st.number_input("ID de usuario", min_value=0, max_value=data.num_nodes-1, value=0)
 top_k = st.number_input("Top-K sugerencias", min_value=1, max_value=20, value=5)
