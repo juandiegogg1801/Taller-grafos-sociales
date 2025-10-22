@@ -246,3 +246,36 @@ if st.session_state.embeddings is not None:
     st.write(f"Top-{top_k} sugerencias: {top_users}")
     st.write("📋 Lista completa de candidatos ordenados por relevancia:")
     st.dataframe(candidates_df, use_container_width=True)
+
+# -----------------------------
+# Comparación automática de modelos
+# -----------------------------
+def compare_models(data, epochs=50, ks=[1,3,5,10]):
+    modelos = ["GCN", "GraphSAGE", "GAT"]
+    resultados = []
+    for modelo in modelos:
+        m = get_model(modelo, num_features, embedding_dim, edge_index=data.edge_index)
+        _, metrics_df = train_and_evaluate(m, data, epochs=epochs, ks=ks)
+        for idx, row in metrics_df.iterrows():
+            resultados.append({
+                "Modelo": modelo,
+                "Métrica": row["Métrica"],
+                "Valor": float(row["Valor"])
+            })
+    return pd.DataFrame(resultados)
+
+if st.button("Comparar modelos automáticamente"):
+    with st.spinner("Entrenando y comparando modelos..."):
+        df_comparacion = compare_models(data)
+    st.subheader("📊 Comparación de métricas entre modelos")
+    st.dataframe(df_comparacion.pivot(index="Modelo", columns="Métrica", values="Valor"), use_container_width=True)
+    # Gráfica comparativa
+    fig = go.Figure()
+    for metrica in df_comparacion["Métrica"].unique():
+        fig.add_trace(go.Bar(
+            x=df_comparacion["Modelo"].unique(),
+            y=[df_comparacion[(df_comparacion["Modelo"]==modelo) & (df_comparacion["Métrica"]==metrica)]["Valor"].values[0] for modelo in df_comparacion["Modelo"].unique()],
+            name=metrica
+        ))
+    fig.update_layout(barmode='group', title="Comparación de métricas por modelo", yaxis=dict(title="Valor"), xaxis=dict(title="Modelo"), template="plotly_white")
+    st.plotly_chart(fig, use_container_width=True)
