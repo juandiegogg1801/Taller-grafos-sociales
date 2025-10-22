@@ -10,7 +10,6 @@ from sklearn.metrics import roc_auc_score, average_precision_score
 import numpy as np
 import random
 import plotly.graph_objects as go
-import os
 
 st.set_page_config(page_title="Recomendador de Amigos Final", layout="wide")
 st.title("💡 Recomendador de Amigos con Link Prediction - Final")
