@@ -4,7 +4,7 @@ import networkx as nx
 from pyvis.network import Network
 import torch
 from torch_geometric.data import Data
-from torch_geometric.nn import GCNConv, SAGEConv, GATConv, Node2Vec
+from torch_geometric.nn import GCNConv, SAGEConv, GATConv
 from torch_geometric.utils import negative_sampling
 from sklearn.metrics import roc_auc_score, average_precision_score
 import numpy as np
@@ -65,7 +65,17 @@ nt = Network(height="500px", width="100%", notebook=False)
 nt.from_nx(subG)
 nt.show_buttons(filter_=['physics'])
 nt.save_graph("grafo_parcial.html")
-st.components.v1.html(open("grafo_parcial.html",'r').read(), height=500)
+try:
+    with open("grafo_parcial.html", "r") as f:
+        html_content = f.read()
+    if len(html_content.strip()) < 100:
+        st.warning("El archivo HTML del grafo está vacío o incompleto. No se puede mostrar el grafo.")
+    else:
+        st.components.v1.html(html_content, height=500)
+except Exception as e:
+    st.warning(f"No se pudo mostrar el grafo: {e}")
+
+# El resto de la app debe mostrarse aunque falle la visualización del grafo
 
 # -----------------------------
 # Preparar datos PyG
@@ -93,7 +103,7 @@ data = train_test_split_edges(data)
 # Selección modelo
 # -----------------------------
 st.subheader("🧠 Modelo GNN")
-model_option = st.selectbox("Selecciona modelo", ["GCN","GraphSAGE","GAT","Node2Vec"])
+model_option = st.selectbox("Selecciona modelo", ["GCN","GraphSAGE","GAT"])
 embedding_dim = 64
 num_features = data.x.shape[1]
 
@@ -104,9 +114,6 @@ def get_model(option, num_features, embedding_dim, edge_index=None):
         return SAGEConv(num_features, embedding_dim)
     elif option=="GAT":
         return GATConv(num_features, embedding_dim, heads=2)
-    elif option=="Node2Vec":
-        return Node2Vec(edge_index, embedding_dim=embedding_dim, walk_length=20,
-                        context_size=10, walks_per_node=10)
 
 model = get_model(model_option, num_features, embedding_dim, edge_index=data.edge_index)
 
@@ -131,25 +138,19 @@ def train_and_evaluate(_model, data, epochs=50, ks=[1,3,5,10]):
     for epoch in range(epochs):
         model.train()
         optimizer.zero_grad()
-        if isinstance(model, Node2Vec):
-            loss = model.loss()
-        else:
-            z = model(x, edge_index)
-            neg_edge_index = negative_sampling(edge_index=edge_index, num_nodes=x.size(0), num_neg_samples=edge_index.size(1))
-            pos_out = (z[edge_index[0]] * z[edge_index[1]]).sum(dim=1)
-            neg_out = (z[neg_edge_index[0]] * z[neg_edge_index[1]]).sum(dim=1)
-            out = torch.cat([pos_out, neg_out])
-            y = torch.cat([torch.ones(pos_out.size(0)), torch.zeros(neg_out.size(0))]).to(device)
-            loss = torch.nn.BCEWithLogitsLoss()(out, y)
+        z = model(x, edge_index)
+        neg_edge_index = negative_sampling(edge_index=edge_index, num_nodes=x.size(0), num_neg_samples=edge_index.size(1))
+        pos_out = (z[edge_index[0]] * z[edge_index[1]]).sum(dim=1)
+        neg_out = (z[neg_edge_index[0]] * z[neg_edge_index[1]]).sum(dim=1)
+        out = torch.cat([pos_out, neg_out])
+        y = torch.cat([torch.ones(pos_out.size(0)), torch.zeros(neg_out.size(0))]).to(device)
+        loss = torch.nn.BCEWithLogitsLoss()(out, y)
         loss.backward()
         optimizer.step()
 
     model.eval()
     with torch.no_grad():
-        if isinstance(model, Node2Vec):
-            z = model().detach()
-        else:
-            z = model(x, edge_index).detach()
+        z = model(x, edge_index).detach()
 
     # --- Métricas ---
     num_nodes = z.size(0)
