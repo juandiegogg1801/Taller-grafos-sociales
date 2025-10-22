@@ -69,18 +69,6 @@ nt.show_buttons(filter_=['physics'])
 nt.save_graph("grafo_parcial.html")
 st.components.v1.html(open("grafo_parcial.html",'r').read(), height=500)
 
-# Botón ver grafo completo (nueva pestaña)
-full_graph_path = "grafo_completo.html"
-if st.button("Ver grafo completo"):
-    nt_full = Network(height="700px", width="100%", notebook=False)
-    nt_full.from_nx(G)
-    nt_full.show_buttons(filter_=['physics'])
-    nt_full.save_graph(full_graph_path)
-    if os.path.exists(full_graph_path):
-        st.markdown(f'<a href="{full_graph_path}" target="_blank">Abrir grafo completo en nueva pestaña</a>', unsafe_allow_html=True)
-    else:
-        st.error("Error al generar el grafo completo.")
-
 # -----------------------------
 # Preparar datos PyG
 # -----------------------------
