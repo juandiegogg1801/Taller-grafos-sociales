@@ -21,14 +21,11 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 # Sidebar: Dataset
 # -----------------------------
 st.sidebar.header("📂 Dataset")
-dataset_option = st.sidebar.selectbox("Selecciona dataset", ["Cargar CSV"])
-uploaded_file = None
-if dataset_option == "Cargar CSV":
-    uploaded_file = st.sidebar.file_uploader("Sube tu CSV (src,dst)", type=['csv'])
+uploaded_file = st.sidebar.file_uploader("Sube tu CSV (src,dst)", type=['csv'])
 
 @st.cache_data
-def load_dataset(option, uploaded_file=None):
-    if option == "Cargar CSV" and uploaded_file:
+def load_dataset(uploaded_file=None):
+    if uploaded_file:
         df = pd.read_csv(uploaded_file)
         G = nx.from_pandas_edgelist(df, 'src', 'dst')
         return df, G
@@ -36,7 +33,7 @@ def load_dataset(option, uploaded_file=None):
         st.warning("Por favor, sube un archivo CSV válido.")
         return pd.DataFrame(columns=['src','dst']), nx.Graph()
 
-df_edges, G = load_dataset(dataset_option, uploaded_file)
+df_edges, G = load_dataset(uploaded_file)
 
 # -----------------------------
 # Resumen del grafo
