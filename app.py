@@ -4,12 +4,13 @@ import networkx as nx
 from pyvis.network import Network
 import torch
 from torch_geometric.data import Data
-from torch_geometric.nn import GCNConv, SAGEConv, GATConv
+from torch_geometric.nn import GCNConv, SAGEConv, GATConv, Node2Vec
 from torch_geometric.utils import negative_sampling
 from sklearn.metrics import roc_auc_score, average_precision_score
 import numpy as np
 import random
 import plotly.graph_objects as go
+import os
 
 st.set_page_config(page_title="Recomendador de Amigos Final", layout="wide")
 st.title("💡 Recomendador de Amigos con Link Prediction - Final")
@@ -20,7 +21,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 # Sidebar: Dataset
 # -----------------------------
 st.sidebar.header("📂 Dataset")
-dataset_option = st.sidebar.selectbox("Selecciona dataset", ["SNAP simulado", "Sintético", "Cargar CSV"])
+dataset_option = st.sidebar.selectbox("Selecciona dataset", ["Cargar CSV"])
 uploaded_file = None
 if dataset_option == "Cargar CSV":
     uploaded_file = st.sidebar.file_uploader("Sube tu CSV (src,dst)", type=['csv'])
@@ -29,14 +30,11 @@ if dataset_option == "Cargar CSV":
 def load_dataset(option, uploaded_file=None):
     if option == "Cargar CSV" and uploaded_file:
         df = pd.read_csv(uploaded_file)
-    elif option == "Sintético":
-        df = pd.DataFrame({'src': np.random.randint(0,100,500),
-                           'dst': np.random.randint(0,100,500)})
-    else:  # SNAP simulado
-        df = pd.DataFrame({'src': np.random.randint(0,200,1000),
-                           'dst': np.random.randint(0,200,1000)})
-    G = nx.from_pandas_edgelist(df, 'src', 'dst')
-    return df, G
+        G = nx.from_pandas_edgelist(df, 'src', 'dst')
+        return df, G
+    else:
+        st.warning("Por favor, sube un archivo CSV válido.")
+        return pd.DataFrame(columns=['src','dst']), nx.Graph()
 
 df_edges, G = load_dataset(dataset_option, uploaded_file)
 
@@ -64,17 +62,7 @@ nt = Network(height="500px", width="100%", notebook=False)
 nt.from_nx(subG)
 nt.show_buttons(filter_=['physics'])
 nt.save_graph("grafo_parcial.html")
-try:
-    with open("grafo_parcial.html", "r") as f:
-        html_content = f.read()
-    if len(html_content.strip()) < 100:
-        st.warning("El archivo HTML del grafo está vacío o incompleto. No se puede mostrar el grafo.")
-    else:
-        st.components.v1.html(html_content, height=500)
-except Exception as e:
-    st.warning(f"No se pudo mostrar el grafo: {e}")
-
-# El resto de la app debe mostrarse aunque falle la visualización
+st.components.v1.html(open("grafo_parcial.html",'r').read(), height=500)
 
 # -----------------------------
 # Preparar datos PyG
@@ -102,7 +90,7 @@ data = train_test_split_edges(data)
 # Selección modelo
 # -----------------------------
 st.subheader("🧠 Modelo GNN")
-model_option = st.selectbox("Selecciona modelo", ["GCN","GraphSAGE","GAT"])
+model_option = st.selectbox("Selecciona modelo", ["GCN","GraphSAGE","GAT","Node2Vec"])
 embedding_dim = 64
 num_features = data.x.shape[1]
 
@@ -113,6 +101,9 @@ def get_model(option, num_features, embedding_dim, edge_index=None):
         return SAGEConv(num_features, embedding_dim)
     elif option=="GAT":
         return GATConv(num_features, embedding_dim, heads=2)
+    elif option=="Node2Vec":
+        return Node2Vec(edge_index, embedding_dim=embedding_dim, walk_length=20,
+                        context_size=10, walks_per_node=10)
 
 model = get_model(model_option, num_features, embedding_dim, edge_index=data.edge_index)
 
@@ -137,19 +128,25 @@ def train_and_evaluate(_model, data, epochs=50, ks=[1,3,5,10]):
     for epoch in range(epochs):
         model.train()
         optimizer.zero_grad()
-        z = model(x, edge_index)
-        neg_edge_index = negative_sampling(edge_index=edge_index, num_nodes=x.size(0), num_neg_samples=edge_index.size(1))
-        pos_out = (z[edge_index[0]] * z[edge_index[1]]).sum(dim=1)
-        neg_out = (z[neg_edge_index[0]] * z[neg_edge_index[1]]).sum(dim=1)
-        out = torch.cat([pos_out, neg_out])
-        y = torch.cat([torch.ones(pos_out.size(0)), torch.zeros(neg_out.size(0))]).to(device)
-        loss = torch.nn.BCEWithLogitsLoss()(out, y)
+        if isinstance(model, Node2Vec):
+            loss = model.loss()
+        else:
+            z = model(x, edge_index)
+            neg_edge_index = negative_sampling(edge_index=edge_index, num_nodes=x.size(0), num_neg_samples=edge_index.size(1))
+            pos_out = (z[edge_index[0]] * z[edge_index[1]]).sum(dim=1)
+            neg_out = (z[neg_edge_index[0]] * z[neg_edge_index[1]]).sum(dim=1)
+            out = torch.cat([pos_out, neg_out])
+            y = torch.cat([torch.ones(pos_out.size(0)), torch.zeros(neg_out.size(0))]).to(device)
+            loss = torch.nn.BCEWithLogitsLoss()(out, y)
         loss.backward()
         optimizer.step()
 
     model.eval()
     with torch.no_grad():
-        z = model(x, edge_index).detach()
+        if isinstance(model, Node2Vec):
+            z = model().detach()
+        else:
+            z = model(x, edge_index).detach()
 
     # --- Métricas ---
     num_nodes = z.size(0)
@@ -246,36 +243,3 @@ if st.session_state.embeddings is not None:
     st.write(f"Top-{top_k} sugerencias: {top_users}")
     st.write("📋 Lista completa de candidatos ordenados por relevancia:")
     st.dataframe(candidates_df, use_container_width=True)
-
-# -----------------------------
-# Comparación automática de modelos
-# -----------------------------
-def compare_models(data, epochs=50, ks=[1,3,5,10]):
-    modelos = ["GCN", "GraphSAGE", "GAT"]
-    resultados = []
-    for modelo in modelos:
-        m = get_model(modelo, num_features, embedding_dim, edge_index=data.edge_index)
-        _, metrics_df = train_and_evaluate(m, data, epochs=epochs, ks=ks)
-        for idx, row in metrics_df.iterrows():
-            resultados.append({
-                "Modelo": modelo,
-                "Métrica": row["Métrica"],
-                "Valor": float(row["Valor"])
-            })
-    return pd.DataFrame(resultados)
-
-if st.button("Comparar modelos automáticamente"):
-    with st.spinner("Entrenando y comparando modelos..."):
-        df_comparacion = compare_models(data)
-    st.subheader("📊 Comparación de métricas entre modelos")
-    st.dataframe(df_comparacion.pivot(index="Modelo", columns="Métrica", values="Valor"), use_container_width=True)
-    # Gráfica comparativa
-    fig = go.Figure()
-    for metrica in df_comparacion["Métrica"].unique():
-        fig.add_trace(go.Bar(
-            x=df_comparacion["Modelo"].unique(),
-            y=[df_comparacion[(df_comparacion["Modelo"]==modelo) & (df_comparacion["Métrica"]==metrica)]["Valor"].values[0] for modelo in df_comparacion["Modelo"].unique()],
-            name=metrica
-        ))
-    fig.update_layout(barmode='group', title="Comparación de métricas por modelo", yaxis=dict(title="Valor"), xaxis=dict(title="Modelo"), template="plotly_white")
-    st.plotly_chart(fig, use_container_width=True)
