@@ -10,6 +10,7 @@ from sklearn.metrics import roc_auc_score, average_precision_score
 import numpy as np
 import random
 import plotly.graph_objects as go
+import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Recomendador de Amigos Final", layout="wide")
 st.title("💡 Recomendador de Amigos con Link Prediction - Final")
@@ -279,3 +280,55 @@ if st.button("Comparar modelos automáticamente"):
         ))
     fig.update_layout(barmode='group', title="Comparación de métricas por modelo", yaxis=dict(title="Valor"), xaxis=dict(title="Modelo"), template="plotly_white")
     st.plotly_chart(fig, use_container_width=True)
+
+# -----------------------------
+# Visualización parcial con filtro de comunidades
+# -----------------------------
+st.subheader("🕸️ Grafo parcial por comunidad")
+
+# Detectar comunidades si no existen
+try:
+    import community as community_louvain
+    partition = community_louvain.best_partition(G)
+except ImportError:
+    from networkx.algorithms import community
+    comms = community.greedy_modularity_communities(G)
+    partition = {}
+    for idx, comm in enumerate(comms):
+        for node in comm:
+            partition[node] = idx
+
+# Opciones de comunidad
+com_ids = sorted(set(partition.values()))
+com_options = ["Todas"] + [f"Comunidad {i}" for i in com_ids]
+selected_com = st.selectbox("Filtrar por comunidad", com_options)
+
+# Filtrar nodos por comunidad
+if selected_com == "Todas":
+    nodes_to_show = list(G.nodes())
+else:
+    com_idx = int(selected_com.split()[-1])
+    nodes_to_show = [n for n in G.nodes() if partition[n] == com_idx]
+
+num_nodes_com = len(nodes_to_show)
+if num_nodes_com < 2:
+    st.warning(f"La comunidad seleccionada tiene solo {num_nodes_com} nodo(s). No se puede mostrar el grafo.")
+else:
+    min_slider = min(100, num_nodes_com)
+    max_slider = min(1000, num_nodes_com)
+    default_slider = min(500, num_nodes_com)
+    max_nodes = st.slider("Nodos a mostrar", min_slider, max_slider, default_slider)
+    sub_nodes = nodes_to_show[:max_nodes]
+    subG = G.subgraph(sub_nodes)
+
+    # Colores por comunidad
+    color_map = {}
+    for n in subG.nodes():
+        color_map[n] = partition[n] if n in partition else 0
+    colors = [plt.cm.tab20(color_map[n] % 20) for n in subG.nodes()]
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+    pos = nx.spring_layout(subG, seed=42)
+    nx.draw(subG, pos, ax=ax, node_size=30, with_labels=False, edge_color="#888", node_color=colors)
+    plt.title(f"Grafo parcial - {selected_com}")
+    st.pyplot(fig)
