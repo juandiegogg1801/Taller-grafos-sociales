@@ -60,20 +60,11 @@ st.subheader("🕸️ Grafo parcial")
 max_nodes = st.slider("Nodos a mostrar", 100, 1000, 500)
 sub_nodes = list(G.nodes())[:max_nodes]
 subG = G.subgraph(sub_nodes)
-nt = Network(height="500px", width="100%", notebook=False)
-nt.from_nx(subG)
-nt.show_buttons(filter_=['physics'])
-nt.save_graph("grafo_parcial.html")
-try:
-    with open("grafo_parcial.html", "r") as f:
-        html_content = f.read()
-    if len(html_content.strip()) < 100:
-        st.warning("El archivo HTML del grafo está vacío o incompleto. No se puede mostrar el grafo.")
-    else:
-        st.components.v1.html(html_content, height=500)
-except Exception as e:
-    st.warning(f"No se pudo mostrar el grafo: {e}")
-
+import matplotlib.pyplot as plt
+fig, ax = plt.subplots(figsize=(10, 7))
+pos = nx.spring_layout(subG, seed=42)
+nx.draw(subG, pos, ax=ax, node_size=30, with_labels=False, edge_color="#888", node_color="#1f78b4")
+st.pyplot(fig)
 # El resto de la app debe mostrarse aunque falle la visualización
 
 # -----------------------------
