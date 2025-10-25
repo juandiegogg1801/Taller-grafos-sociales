@@ -32,14 +32,9 @@ def load_dataset(option, uploaded_file=None):
         df = pd.read_csv(uploaded_file)
         G = nx.from_pandas_edgelist(df, 'src', 'dst')
     else:  # SNAP Facebook
-        # Leer el archivo facebook_combined.txt
-        edge_list = []
-        with open("facebook_combined.txt", "r") as f:
-            for line in f:
-                parts = line.strip().split()
-                if len(parts) == 2:
-                    edge_list.append((int(parts[0]), int(parts[1])))
-        df = pd.DataFrame(edge_list, columns=['src', 'dst'])
+        # Leer el archivo dataset_snap_facebook.csv (formato src,dst)
+        snap_path = "dataset_snap_facebook.csv"
+        df = pd.read_csv(snap_path)
         G = nx.from_pandas_edgelist(df, 'src', 'dst')
     return df, G
 
