@@ -234,15 +234,14 @@ if st.session_state.metrics_df is not None:
     top_k = st.number_input("Top-K sugerencias", min_value=1, max_value=20, value=5)
 
     def recommend_detailed(z, data, user_id, top_k=5):
-        edge_index = data.edge_index
-        user_emb = z[user_id]
-        scores = torch.matmul(z,user_emb)
-        neighbors = set(edge_index[1][edge_index[0]==user_id].cpu().numpy())
-        neighbors.add(user_id)
-        candidates = [(i,s.item()) for i,s in enumerate(scores) if i not in neighbors]
-        candidates_sorted = sorted(candidates, key=lambda x:x[1], reverse=True)
+        # Obtener vecinos actuales usando NetworkX para evitar duplicados y considerar ambos sentidos
+        actual_neighbors = set(G.neighbors(user_id)) if user_id in G.nodes else set()
+        actual_neighbors.add(user_id)  # No recomendarse a sí mismo
+        scores = torch.matmul(z, z[user_id])
+        candidates = [(i, s.item()) for i, s in enumerate(scores) if i not in actual_neighbors]
+        candidates_sorted = sorted(candidates, key=lambda x: x[1], reverse=True)
         top_users = [c[0] for c in candidates_sorted[:top_k]]
-        all_candidates_df = pd.DataFrame(candidates_sorted, columns=["Usuario","Score"])
+        all_candidates_df = pd.DataFrame(candidates_sorted, columns=["Usuario", "Score"])
         return len(candidates_sorted), top_users, all_candidates_df
 
     if st.session_state.embeddings is not None:
