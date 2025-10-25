@@ -239,6 +239,56 @@ if st.session_state.embeddings is not None:
     st.dataframe(candidates_df, use_container_width=True)
 
 # -----------------------------
+# Visualización parcial sincronizada con recomendaciones
+# -----------------------------
+st.subheader("🕸️ Grafo parcial (sincronizado con usuario)")
+max_nodes = st.slider("Nodos a mostrar", 100, 1000, 500, key="slider_grafo_usuario")
+sub_nodes = list(G.nodes())[:max_nodes]
+subG = G.subgraph(sub_nodes)
+import matplotlib.pyplot as plt
+fig, ax = plt.subplots(figsize=(10, 7))
+pos = nx.spring_layout(subG, seed=42)
+
+# Definir top_users y recommended_nodes correctamente
+if st.session_state.embeddings is not None:
+    _, top_users, _ = recommend_detailed(st.session_state.embeddings, data, user_id, top_k)
+else:
+    top_users = []
+recommended_nodes = [n for n in subG.nodes if n in top_users and n != user_id]
+
+# Resaltar nodo y aristas del usuario seleccionado
+highlight_node = user_id if user_id in subG.nodes else None
+highlight_edges = []
+if highlight_node is not None:
+    highlight_edges = [(highlight_node, v) for v in subG.neighbors(highlight_node)]
+
+# Aristas recomendadas (usuario -> nodos recomendados)
+recommended_edges = []
+if st.session_state.embeddings is not None and highlight_node is not None:
+    for rec in recommended_nodes:
+        if (highlight_node, rec) in subG.edges or (rec, highlight_node) in subG.edges:
+            continue  # Ya es vecino, se resalta en rojo
+        recommended_edges.append((highlight_node, rec))
+
+# Dibujar aristas normales
+nx.draw_networkx_edges(subG, pos, ax=ax, edge_color="#888", width=1)
+# Dibujar aristas resaltadas (vecinos directos)
+if highlight_edges:
+    nx.draw_networkx_edges(subG, pos, ax=ax, edgelist=highlight_edges, edge_color="red", width=2)
+# Dibujar aristas recomendadas (usuario -> recomendados)
+if recommended_edges:
+    nx.draw_networkx_edges(subG, pos, ax=ax, edgelist=recommended_edges, edge_color="limegreen", width=2, style="dashed")
+# Dibujar nodos normales, recomendados y el nodo seleccionado
+normal_nodes = [n for n in subG.nodes if n != highlight_node and n not in recommended_nodes]
+if recommended_nodes:
+    nx.draw_networkx_nodes(subG, pos, ax=ax, nodelist=recommended_nodes, node_size=60, node_color="limegreen")
+if highlight_node is not None:
+    nx.draw_networkx_nodes(subG, pos, ax=ax, nodelist=[highlight_node], node_size=80, node_color="red")
+nx.draw_networkx_nodes(subG, pos, ax=ax, nodelist=normal_nodes, node_size=30, node_color="#1f78b4")
+plt.title(f"Grafo parcial (Usuario seleccionado: {user_id})")
+st.pyplot(fig)
+
+# -----------------------------
 # Comparación automática de modelos
 # -----------------------------
 def compare_models(data, epochs=50, ks=[1,3,5,10]):
