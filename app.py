@@ -249,15 +249,12 @@ if st.session_state.embeddings is not None:
     st.dataframe(candidates_df, use_container_width=True)
 
 # -----------------------------
-# Visualización parcial sincronizada con recomendaciones
+# Visualización parcial sincronizada con recomendaciones (Plotly interactivo)
 # -----------------------------
-st.subheader("🕸️ Grafo parcial (sincronizado con usuario)")
+st.subheader("🕸️ Grafo parcial (sincronizado con usuario, interactivo)")
 max_nodes = st.slider("Nodos a mostrar", 100, 1000, 500, key="slider_grafo_usuario")
 sub_nodes = list(G.nodes())[:max_nodes]
 subG = G.subgraph(sub_nodes)
-import matplotlib.pyplot as plt
-fig, ax = plt.subplots(figsize=(10, 7))
-pos = nx.spring_layout(subG, seed=42)
 
 # Definir top_users y recommended_nodes correctamente
 if st.session_state.embeddings is not None:
@@ -266,37 +263,92 @@ else:
     top_users = []
 recommended_nodes = [n for n in subG.nodes if n in top_users and n != user_id]
 
-# Resaltar nodo y aristas del usuario seleccionado
 highlight_node = user_id if user_id in subG.nodes else None
-highlight_edges = []
-if highlight_node is not None:
-    highlight_edges = [(highlight_node, v) for v in subG.neighbors(highlight_node)]
+highlight_edges = [(highlight_node, v) for v in subG.neighbors(highlight_node)] if highlight_node is not None else []
 
-# Aristas recomendadas (usuario -> nodos recomendados)
+# Aristas recomendadas (usuario → nodos recomendados)
 recommended_edges = []
 if st.session_state.embeddings is not None and highlight_node is not None:
     for rec in recommended_nodes:
-        if (highlight_node, rec) in subG.edges or (rec, highlight_node) in subG.edges:
-            continue  # Ya es vecino, se resalta en rojo
+        # Mostrar arista recomendada aunque ya sea vecino
         recommended_edges.append((highlight_node, rec))
 
-# Dibujar aristas normales
-nx.draw_networkx_edges(subG, pos, ax=ax, edge_color="#888", width=1)
-# Dibujar aristas resaltadas (vecinos directos)
-if highlight_edges:
-    nx.draw_networkx_edges(subG, pos, ax=ax, edgelist=highlight_edges, edge_color="red", width=2)
-# Dibujar aristas recomendadas (usuario -> recomendados)
-if recommended_edges:
-    nx.draw_networkx_edges(subG, pos, ax=ax, edgelist=recommended_edges, edge_color="limegreen", width=2, style="dashed")
-# Dibujar nodos normales, recomendados y el nodo seleccionado
-normal_nodes = [n for n in subG.nodes if n != highlight_node and n not in recommended_nodes]
-if recommended_nodes:
-    nx.draw_networkx_nodes(subG, pos, ax=ax, nodelist=recommended_nodes, node_size=60, node_color="limegreen")
+# Calcular posiciones
+import numpy as np
+pos = nx.spring_layout(subG, seed=42)
+x_coords = np.array([pos[n][0] for n in subG.nodes])
+y_coords = np.array([pos[n][1] for n in subG.nodes])
+
+# Colores y tamaños
+node_colors = []
+node_sizes = []
+for n in subG.nodes:
+    if n == highlight_node:
+        node_colors.append('red')
+        node_sizes.append(18)
+    elif n in recommended_nodes:
+        node_colors.append('limegreen')
+        node_sizes.append(14)
+    else:
+        node_colors.append('#1f78b4')
+        node_sizes.append(8)
+
+node_text = [f"ID: {n}" for n in subG.nodes]
+
+# Edges normales
+edge_x = []
+edge_y = []
+for u, v in subG.edges:
+    # No filtrar aristas recomendadas ni actuales
+    if highlight_node is not None and (u == highlight_node or v == highlight_node):
+        continue
+    if (highlight_node, v) in recommended_edges or (highlight_node, u) in recommended_edges:
+        continue
+    x0, y0 = pos[u]
+    x1, y1 = pos[v]
+    edge_x += [x0, x1, None]
+    edge_y += [y0, y1, None]
+
+# Edges actuales (rojo)
+actual_edge_x = []
+actual_edge_y = []
+for u, v in highlight_edges:
+    x0, y0 = pos[u]
+    x1, y1 = pos[v]
+    actual_edge_x += [x0, x1, None]
+    actual_edge_y += [y0, y1, None]
+
+# Edges recomendados (verde)
+rec_edge_x = []
+rec_edge_y = []
+for u, v in recommended_edges:
+    x0, y0 = pos[u]
+    x1, y1 = pos[v]
+    rec_edge_x += [x0, x1, None]
+    rec_edge_y += [y0, y1, None]
+
+import plotly.graph_objects as go
+# Mostrar información básica arriba del gráfico
+num_actual_edges = len(highlight_edges)
+num_candidate_edges = len(recommended_edges)
 if highlight_node is not None:
-    nx.draw_networkx_nodes(subG, pos, ax=ax, nodelist=[highlight_node], node_size=80, node_color="red")
-nx.draw_networkx_nodes(subG, pos, ax=ax, nodelist=normal_nodes, node_size=30, node_color="#1f78b4")
-plt.title(f"Grafo parcial (Usuario seleccionado: {user_id})")
-st.pyplot(fig)
+    st.markdown(f"<div style='font-size:18px;'><b>ID seleccionado:</b> {highlight_node} &nbsp; <b>Aristas actuales:</b> {num_actual_edges} &nbsp; <b>Aristas recomendadas:</b> {num_candidate_edges}</div>", unsafe_allow_html=True)
+
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=edge_x, y=edge_y, mode='lines', line=dict(color='#888', width=1), hoverinfo='none', showlegend=False))
+if actual_edge_x:
+    fig.add_trace(go.Scatter(x=actual_edge_x, y=actual_edge_y, mode='lines', line=dict(color='red', width=2), hoverinfo='none', showlegend=False))
+if rec_edge_x:
+    fig.add_trace(go.Scatter(x=rec_edge_x, y=rec_edge_y, mode='lines', line=dict(color='limegreen', width=2, dash='dash'), hoverinfo='none', showlegend=False))
+fig.add_trace(go.Scatter(x=x_coords, y=y_coords, mode='markers', marker=dict(size=node_sizes, color=node_colors, line=dict(width=1, color='white')), text=node_text, hoverinfo='text', showlegend=False))
+fig.update_layout(title=f"Grafo parcial (Usuario seleccionado: {user_id})", height=600, margin=dict(b=20,l=5,r=5,t=40), xaxis=dict(showgrid=False, zeroline=False, showticklabels=False), yaxis=dict(showgrid=False, zeroline=False, showticklabels=False), plot_bgcolor='rgba(240,240,240,0.9)')
+st.plotly_chart(fig, use_container_width=True)
+
+# Mostrar información debajo del gráfico
+num_actual_edges = len(highlight_edges)
+num_candidate_edges = len(recommended_edges)
+if highlight_node is not None:
+    st.info(f"ID seleccionado: {highlight_node} | Aristas actuales: {num_actual_edges} | Aristas candidatas: {num_candidate_edges}")
 
 # -----------------------------
 # Comparación automática de modelos
