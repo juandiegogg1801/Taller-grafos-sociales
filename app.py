@@ -47,36 +47,6 @@ df_edges, G = load_dataset(dataset_option, uploaded_file)
 st.subheader("📊 Resumen del grafo")
 st.write(f"Nodos: {G.number_of_nodes()}, Aristas: {G.number_of_edges()}, Densidad: {nx.density(G):.4f}")
 
-try:
-    import community as community_louvain
-    partition = community_louvain.best_partition(G)
-    st.write(f"Número de comunidades detectadas: {len(set(partition.values()))}")
-except ImportError:
-    st.write("Instala `python-louvain` para detección de comunidades.")
-
-# -----------------------------
-# Visualización parcial
-# -----------------------------
-st.subheader("🕸️ Grafo parcial")
-max_nodes = st.slider("Nodos a mostrar", 100, 1000, 500)
-sub_nodes = list(G.nodes())[:max_nodes]
-subG = G.subgraph(sub_nodes)
-nt = Network(height="500px", width="100%", notebook=False)
-nt.from_nx(subG)
-nt.show_buttons(filter_=['physics'])
-nt.save_graph("grafo_parcial.html")
-try:
-    with open("grafo_parcial.html", "r") as f:
-        html_content = f.read()
-    if len(html_content.strip()) < 100:
-        st.warning("El archivo HTML del grafo está vacío o incompleto. No se puede mostrar el grafo.")
-    else:
-        st.components.v1.html(html_content, height=500)
-except Exception as e:
-    st.warning(f"No se pudo mostrar el grafo: {e}")
-
-# El resto de la app debe mostrarse aunque falle la visualización
-
 # -----------------------------
 # Preparar datos PyG
 # -----------------------------
@@ -102,7 +72,7 @@ data = train_test_split_edges(data)
 # -----------------------------
 # Selección modelo
 # -----------------------------
-st.subheader("🧠 Modelo GNN")
+st.subheader("🧠 Selección de modelo GNN")
 model_option = st.selectbox("Selecciona modelo", ["GCN","GraphSAGE","GAT"])
 embedding_dim = 64
 num_features = data.x.shape[1]
@@ -198,18 +168,18 @@ def train_and_evaluate(_model, data, epochs=50, ks=[1,3,5,10]):
     metrics_table["Valor"] = metrics_table["Valor"].map(lambda x:f"{x:.4f}")
     return z, metrics_table
 
-if st.button("Entrenar y calcular métricas"):
+if st.button("Entrenar modelo"):
     with st.spinner("⚡ Entrenando y evaluando..."):
         embeddings, metrics_df = train_and_evaluate(model, data)
         st.session_state.embeddings = embeddings
         st.session_state.metrics_df = metrics_df
-    st.success("✅ Entrenamiento y métricas completadas")
+    st.success("✅ Entrenamiento completado")
 
 # -----------------------------
 # Mostrar métricas si existen
 # -----------------------------
 if st.session_state.metrics_df is not None:
-    st.subheader("📈 Métricas avanzadas")
+    st.subheader("📈 Resultados de métricas")
     st.dataframe(st.session_state.metrics_df, use_container_width=True)
     fig = go.Figure()
     fig.add_trace(go.Bar(
@@ -219,12 +189,13 @@ if st.session_state.metrics_df is not None:
         textposition='outside',
         marker_color='blue'
     ))
-    fig.update_layout(yaxis=dict(range=[0,1], title="Valor"), title="Métricas Link Prediction", template="plotly_white")
+    fig.update_layout(yaxis=dict(range=[0,1], title="Valor"), title="Gráfico del resultado de las métricas", template="plotly_white")
     st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
-# Recomendacione
+# Recomendaciones
 # -----------------------------
+st.subheader("🤝 Recomendaciones de amigos")
 user_id = st.number_input("ID de usuario", min_value=0, max_value=data.num_nodes-1, value=0)
 top_k = st.number_input("Top-K sugerencias", min_value=1, max_value=20, value=5)
 
@@ -251,7 +222,7 @@ if st.session_state.embeddings is not None:
 # -----------------------------
 # Visualización parcial sincronizada con recomendaciones (Plotly interactivo)
 # -----------------------------
-st.subheader("🕸️ Grafo parcial (sincronizado con usuario, interactivo)")
+st.subheader("🕸️ Visualización del grafo con recomendaciones")
 max_nodes = st.slider("Nodos a mostrar", 100, 1000, 500, key="slider_grafo_usuario")
 sub_nodes = list(G.nodes())[:max_nodes]
 subG = G.subgraph(sub_nodes)
@@ -382,55 +353,3 @@ if st.button("Comparar modelos automáticamente"):
         ))
     fig.update_layout(barmode='group', title="Comparación de métricas por modelo", yaxis=dict(title="Valor"), xaxis=dict(title="Modelo"), template="plotly_white")
     st.plotly_chart(fig, use_container_width=True)
-
-# -----------------------------
-# Visualización parcial con filtro de comunidades
-# -----------------------------
-st.subheader("🕸️ Grafo parcial por comunidad")
-
-# Detectar comunidades si no existen
-try:
-    import community as community_louvain
-    partition = community_louvain.best_partition(G)
-except ImportError:
-    from networkx.algorithms import community
-    comms = community.greedy_modularity_communities(G)
-    partition = {}
-    for idx, comm in enumerate(comms):
-        for node in comm:
-            partition[node] = idx
-
-# Opciones de comunidad
-com_ids = sorted(set(partition.values()))
-com_options = ["Todas"] + [f"Comunidad {i}" for i in com_ids]
-selected_com = st.selectbox("Filtrar por comunidad", com_options)
-
-# Filtrar nodos por comunidad
-if selected_com == "Todas":
-    nodes_to_show = list(G.nodes())
-else:
-    com_idx = int(selected_com.split()[-1])
-    nodes_to_show = [n for n in G.nodes() if partition[n] == com_idx]
-
-num_nodes_com = len(nodes_to_show)
-if num_nodes_com < 2:
-    st.warning(f"La comunidad seleccionada tiene solo {num_nodes_com} nodo(s). No se puede mostrar el grafo.")
-else:
-    min_slider = min(100, num_nodes_com)
-    max_slider = min(1000, num_nodes_com)
-    default_slider = min(500, num_nodes_com)
-    max_nodes = st.slider("Nodos a mostrar", min_slider, max_slider, default_slider)
-    sub_nodes = nodes_to_show[:max_nodes]
-    subG = G.subgraph(sub_nodes)
-
-    # Colores por comunidad
-    color_map = {}
-    for n in subG.nodes():
-        color_map[n] = partition[n] if n in partition else 0
-    colors = [plt.cm.tab20(color_map[n] % 20) for n in subG.nodes()]
-
-    fig, ax = plt.subplots(figsize=(10, 7))
-    pos = nx.spring_layout(subG, seed=42)
-    nx.draw(subG, pos, ax=ax, node_size=30, with_labels=False, edge_color="#888", node_color=colors)
-    plt.title(f"Grafo parcial - {selected_com}")
-    st.pyplot(fig)
