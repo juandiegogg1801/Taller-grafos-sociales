@@ -182,12 +182,14 @@ def train_and_evaluate(_model, data, epochs=50, ks=None):
     ndcg_list = []
     map_list = []
     hr_list = []
+    mrr_list = []
     for k in ks:
         precision_k = []
         recall_k = []
         ndcg_k = []
         map_k = []
         hr_k = []
+        mrr_k = []
         for u in range(num_nodes):
             mask_pos = (test_edges[:,0]==u)
             pos_idx = torch.where(mask_pos)[0]
@@ -216,14 +218,21 @@ def train_and_evaluate(_model, data, epochs=50, ks=None):
                     num_rel += 1
                     ap += num_rel/(idx+1)
             map_k.append(ap/max(1,len(true_friends)))
+            # MRR por usuario
+            ranks = [idx+1 for idx, i in enumerate(top_k) if i in true_friends]
+            if ranks:
+                mrr_k.append(1.0/min(ranks))
+            else:
+                mrr_k.append(0)
         precision_list.append(np.mean(precision_k) if precision_k else 0)
         recall_list.append(np.mean(recall_k) if recall_k else 0)
         ndcg_list.append(np.mean(ndcg_k) if ndcg_k else 0)
         map_list.append(np.mean(map_k) if map_k else 0)
         hr_list.append(np.mean(hr_k) if hr_k else 0)
+        mrr_list.append(np.mean(mrr_k) if mrr_k else 0)
     metrics_table = pd.DataFrame({
-        "Métrica": ["AUC", "F1", "MRR"] + [f"Precision@{k}" for k in ks] + [f"Recall@{k}" for k in ks] + [f"NDCG@{k}" for k in ks] + [f"MAP@{k}" for k in ks] + [f"HR@{k}" for k in ks],
-        "Valor": [auc, f1, mrr] + precision_list + recall_list + ndcg_list + map_list + hr_list
+        "Métrica": ["AUC", "F1"] + [f"MRR@{k}" for k in ks] + [f"Precision@{k}" for k in ks] + [f"Recall@{k}" for k in ks] + [f"NDCG@{k}" for k in ks] + [f"MAP@{k}" for k in ks] + [f"HR@{k}" for k in ks],
+        "Valor": [auc, f1] + mrr_list + precision_list + recall_list + ndcg_list + map_list + hr_list
     })
     metrics_table["Valor"] = metrics_table["Valor"].map(lambda x:f"{x:.4f}")
     return z, metrics_table
