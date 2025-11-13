@@ -162,9 +162,8 @@ def train_and_evaluate(_model, data, epochs=50, ks=None):
     y_scores = np.concatenate([pos_scores, neg_scores])
 
     # Métricas globales
-    from sklearn.metrics import roc_auc_score, f1_score, average_precision_score
+    from sklearn.metrics import roc_auc_score, f1_score
     auc = roc_auc_score(y_true, y_scores)
-    ap = average_precision_score(y_true, y_scores)
     threshold = np.median(y_scores)
     y_pred = (y_scores >= threshold).astype(int)
     f1 = f1_score(y_true, y_pred)
@@ -184,6 +183,7 @@ def train_and_evaluate(_model, data, epochs=50, ks=None):
     map_list = []
     hr_list = []
     mrr_list = []
+    ap_list = []
     for k in ks:
         precision_k = []
         recall_k = []
@@ -191,6 +191,7 @@ def train_and_evaluate(_model, data, epochs=50, ks=None):
         map_k = []
         hr_k = []
         mrr_k = []
+        ap_k = []
         for u in range(num_nodes):
             mask_pos = (test_edges[:,0]==u)
             pos_idx = torch.where(mask_pos)[0]
@@ -214,12 +215,14 @@ def train_and_evaluate(_model, data, epochs=50, ks=None):
                 ndcg_k.append(0)
             ap = 0
             num_rel = 0
+            precisiones = []
+            num_hits = 0
             for idx, i in enumerate(top_k):
                 if i in true_friends:
-                    num_rel += 1
-                    ap += num_rel/(idx+1)
+                    num_hits += 1
+                    precisiones.append(num_hits/(idx+1))
+            ap_k.append(np.mean(precisiones) if precisiones else 0)
             map_k.append(ap/max(1,len(true_friends)))
-            # MRR por usuario
             ranks = [idx+1 for idx, i in enumerate(top_k) if i in true_friends]
             if ranks:
                 mrr_k.append(1.0/min(ranks))
@@ -231,9 +234,10 @@ def train_and_evaluate(_model, data, epochs=50, ks=None):
         map_list.append(np.mean(map_k) if map_k else 0)
         hr_list.append(np.mean(hr_k) if hr_k else 0)
         mrr_list.append(np.mean(mrr_k) if mrr_k else 0)
+        ap_list.append(np.mean(ap_k) if ap_k else 0)
     metrics_table = pd.DataFrame({
-        "Métrica": ["AUC", "AP", "F1"] + [f"MRR@{k}" for k in ks] + [f"Precision@{k}" for k in ks] + [f"Recall@{k}" for k in ks] + [f"NDCG@{k}" for k in ks] + [f"MAP@{k}" for k in ks] + [f"HR@{k}" for k in ks],
-        "Valor": [auc, ap, f1] + mrr_list + precision_list + recall_list + ndcg_list + map_list + hr_list
+        "Métrica": ["AUC", "F1"] + [f"MRR@{k}" for k in ks] + [f"AP@{k}" for k in ks] + [f"Precision@{k}" for k in ks] + [f"Recall@{k}" for k in ks] + [f"NDCG@{k}" for k in ks] + [f"MAP@{k}" for k in ks] + [f"HR@{k}" for k in ks],
+        "Valor": [auc, f1] + mrr_list + ap_list + precision_list + recall_list + ndcg_list + map_list + hr_list
     })
     metrics_table["Valor"] = metrics_table["Valor"].map(lambda x:f"{x:.4f}")
     return z, metrics_table
