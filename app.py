@@ -18,7 +18,7 @@ st.title("💡 Recomendador de Amigos con Link Prediction - Final")
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # -----------------------------
-# Sidebar: Dataset
+# Sidebar:  Dataset
 # -----------------------------
 st.sidebar.header("📂 Dataset")
 dataset_option = st.sidebar.selectbox("Selecciona dataset", ["SNAP Facebook", "Cargar CSV"])
