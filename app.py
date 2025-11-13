@@ -162,8 +162,9 @@ def train_and_evaluate(_model, data, epochs=50, ks=None):
     y_scores = np.concatenate([pos_scores, neg_scores])
 
     # Métricas globales
-    from sklearn.metrics import roc_auc_score, f1_score
+    from sklearn.metrics import roc_auc_score, f1_score, average_precision_score
     auc = roc_auc_score(y_true, y_scores)
+    ap = average_precision_score(y_true, y_scores)
     threshold = np.median(y_scores)
     y_pred = (y_scores >= threshold).astype(int)
     f1 = f1_score(y_true, y_pred)
@@ -231,8 +232,8 @@ def train_and_evaluate(_model, data, epochs=50, ks=None):
         hr_list.append(np.mean(hr_k) if hr_k else 0)
         mrr_list.append(np.mean(mrr_k) if mrr_k else 0)
     metrics_table = pd.DataFrame({
-        "Métrica": ["AUC", "F1"] + [f"MRR@{k}" for k in ks] + [f"Precision@{k}" for k in ks] + [f"Recall@{k}" for k in ks] + [f"NDCG@{k}" for k in ks] + [f"MAP@{k}" for k in ks] + [f"HR@{k}" for k in ks],
-        "Valor": [auc, f1] + mrr_list + precision_list + recall_list + ndcg_list + map_list + hr_list
+        "Métrica": ["AUC", "AP", "F1"] + [f"MRR@{k}" for k in ks] + [f"Precision@{k}" for k in ks] + [f"Recall@{k}" for k in ks] + [f"NDCG@{k}" for k in ks] + [f"MAP@{k}" for k in ks] + [f"HR@{k}" for k in ks],
+        "Valor": [auc, ap, f1] + mrr_list + precision_list + recall_list + ndcg_list + map_list + hr_list
     })
     metrics_table["Valor"] = metrics_table["Valor"].map(lambda x:f"{x:.4f}")
     return z, metrics_table
