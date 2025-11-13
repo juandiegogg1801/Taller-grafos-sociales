@@ -1,16 +1,14 @@
 import streamlit as st
 import pandas as pd
 import networkx as nx
-from pyvis.network import Network
 import torch
 from torch_geometric.data import Data
 from torch_geometric.nn import GCNConv, SAGEConv, GATConv
 from torch_geometric.utils import negative_sampling
-from sklearn.metrics import roc_auc_score, average_precision_score, ndcg_score
+from sklearn.metrics import mean_squared_error, mean_absolute_error, precision_score, recall_score, ndcg_score, average_precision_score
 import numpy as np
 import random
 import plotly.graph_objects as go
-import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Recomendador de Amigos Final", layout="wide")
 st.title("💡 Recomendador de Amigos con Link Prediction - Final")
@@ -129,7 +127,7 @@ if "metrics_df" not in st.session_state:
 # -----------------------------
 def train_and_evaluate(_model, data, epochs=50, ks=None):
     if ks is None:
-        ks = [5, 10]
+        ks = [1, 3, 5, 10]
     model = _model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     x = data.x.to(device)
@@ -155,63 +153,49 @@ def train_and_evaluate(_model, data, epochs=50, ks=None):
 
     num_nodes = z.size(0)
     num_test = test_edges.size(0)
-    pos_scores = (z[test_edges[:,0]] * z[test_edges[:,1]]).sum(dim=1).cpu().numpy()
+    pos_scores = (z[test_edges[:,0]] * z[test_edges[:,1]]).sum(dim=1).cpu()
     neg_edge_index = negative_sampling(edge_index=edge_index, num_nodes=num_nodes, num_neg_samples=num_test).to(device)
-    neg_scores = (z[neg_edge_index[0]] * z[neg_edge_index[1]]).sum(dim=1).cpu().numpy()
-    y_true = np.concatenate([np.ones(pos_scores.shape[0]), np.zeros(neg_scores.shape[0])])
-    y_scores = np.concatenate([pos_scores, neg_scores])
+    neg_scores = (z[neg_edge_index[0]] * z[neg_edge_index[1]]).sum(dim=1).cpu()
+    y_true = torch.cat([torch.ones(pos_scores.size(0)), torch.zeros(neg_scores.size(0))])
+    y_scores = torch.cat([pos_scores, neg_scores])
 
-    # Métricas globales
-    from sklearn.metrics import roc_auc_score, f1_score, average_precision_score
-    auc = roc_auc_score(y_true, y_scores)
-    ap = average_precision_score(y_true, y_scores)
-    threshold = np.median(y_scores)
-    y_pred = (y_scores >= threshold).astype(int)
-    f1 = f1_score(y_true, y_pred)
-
-    # MRR
-    def mrr_score(y_true, y_score):
-        order = np.argsort(y_score)[::-1]
-        y_true = np.take(y_true, order)
-        ranks = np.where(y_true == 1)[0]
-        return 1.0/(ranks[0]+1) if len(ranks)>0 else 0
-    mrr = mrr_score(y_true, y_scores)
-
-    # Métricas de recomendación por usuario
+    # --- Métricas de recomendación por usuario ---
+    ks = [5, 10]  # Puedes ajustar los valores de K
     precision_list = []
     recall_list = []
     ndcg_list = []
     map_list = []
     hr_list = []
-    mrr_list = []
     for k in ks:
         precision_k = []
         recall_k = []
         ndcg_k = []
         map_k = []
         hr_k = []
-        mrr_k = []
         for u in range(num_nodes):
+            # Evitar usuarios sin test
             mask_pos = (test_edges[:,0]==u)
             pos_idx = torch.where(mask_pos)[0]
             if len(pos_idx)==0:
                 continue
+            # Scores para todos los nodos
             scores = torch.matmul(z, z[u]).cpu().numpy()
+            # Excluir vecinos actuales y el propio usuario
             actual_neighbors = set(edge_index[1][edge_index[0]==u].cpu().numpy())
             actual_neighbors.add(u)
             candidates = [(i, scores[i]) for i in range(num_nodes) if i not in actual_neighbors]
             candidates_sorted = sorted(candidates, key=lambda x: x[1], reverse=True)
             top_k = [i for i,_ in candidates_sorted[:k]]
+            # Reales en test
             true_friends = set(test_edges[pos_idx][:,1].cpu().numpy())
             hits = len(set(top_k) & true_friends)
             precision_k.append(hits / k)
             recall_k.append(hits / len(true_friends) if len(true_friends)>0 else 0)
             hr_k.append(1 if hits>0 else 0)
+            # NDCG
             rel = [1 if i in true_friends else 0 for i,_ in candidates_sorted[:k]]
-            if sum(rel)>0 and len(top_k) > 1:
-                ndcg_k.append(ndcg_score([rel], [scores[top_k]]))
-            else:
-                ndcg_k.append(0)
+            ndcg_k.append(ndcg_score([rel], [scores[top_k]]) if sum(rel)>0 else 0)
+            # MAP
             ap = 0
             num_rel = 0
             for idx, i in enumerate(top_k):
@@ -219,21 +203,14 @@ def train_and_evaluate(_model, data, epochs=50, ks=None):
                     num_rel += 1
                     ap += num_rel/(idx+1)
             map_k.append(ap/max(1,len(true_friends)))
-            # MRR por usuario
-            ranks = [idx+1 for idx, i in enumerate(top_k) if i in true_friends]
-            if ranks:
-                mrr_k.append(1.0/min(ranks))
-            else:
-                mrr_k.append(0)
         precision_list.append(np.mean(precision_k) if precision_k else 0)
         recall_list.append(np.mean(recall_k) if recall_k else 0)
         ndcg_list.append(np.mean(ndcg_k) if ndcg_k else 0)
         map_list.append(np.mean(map_k) if map_k else 0)
         hr_list.append(np.mean(hr_k) if hr_k else 0)
-        mrr_list.append(np.mean(mrr_k) if mrr_k else 0)
     metrics_table = pd.DataFrame({
-        "Métrica": ["AUC", "AP", "F1"] + [f"MRR@{k}" for k in ks] + [f"Precision@{k}" for k in ks] + [f"Recall@{k}" for k in ks] + [f"NDCG@{k}" for k in ks] + [f"MAP@{k}" for k in ks] + [f"HR@{k}" for k in ks],
-        "Valor": [auc, ap, f1] + mrr_list + precision_list + recall_list + ndcg_list + map_list + hr_list
+        "Métrica": [f"Precision@{k}" for k in ks] + [f"Recall@{k}" for k in ks] + [f"NDCG@{k}" for k in ks] + [f"MAP@{k}" for k in ks] + [f"HR@{k}" for k in ks],
+        "Valor": precision_list + recall_list + ndcg_list + map_list + hr_list
     })
     metrics_table["Valor"] = metrics_table["Valor"].map(lambda x:f"{x:.4f}")
     return z, metrics_table
@@ -372,7 +349,9 @@ if st.session_state.metrics_df is not None:
 # -----------------------------
 # Comparación automática de modelos
 # -----------------------------
-def compare_models(data, epochs=50, ks=[1,3,5,10]):
+def compare_models(data, epochs=50, ks=None):
+    if ks is None:
+        ks = [1, 3, 5, 10]
     modelos = ["GCN", "GraphSAGE", "GAT"]
     resultados = []
     for modelo in modelos:
