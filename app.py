@@ -380,14 +380,23 @@ if st.button("Comparar modelos automáticamente"):
     with st.spinner("Entrenando y comparando modelos..."):
         df_comparacion = compare_models(data)
     st.subheader("📊 Comparación de métricas entre modelos")
-    st.dataframe(df_comparacion.pivot(index="Modelo", columns="Métrica", values="Valor"), use_container_width=True)
+    ks = [1,3,5,10]
+    metric_types = ["MRR", "MAP", "NDCG", "Precision", "Recall", "HR"]
+    metric_order = ["AUC", "F1"]
+    for metric in metric_types:
+        for k in ks:
+            metric_order.append(f"{metric}@{k}")
+    df_comparacion_pivot = df_comparacion.pivot(index="Modelo", columns="Métrica", values="Valor")
+    df_comparacion_pivot = df_comparacion_pivot[[col for col in metric_order if col in df_comparacion_pivot.columns]]
+    st.dataframe(df_comparacion_pivot, use_container_width=True)
     # Gráfica comparativa
     fig = go.Figure()
-    for metrica in df_comparacion["Métrica"].unique():
-        fig.add_trace(go.Bar(
-            x=df_comparacion["Modelo"].unique(),
-            y=[df_comparacion[(df_comparacion["Modelo"]==modelo) & (df_comparacion["Métrica"]==metrica)]["Valor"].values[0] for modelo in df_comparacion["Modelo"].unique()],
-            name=metrica
-        ))
+    for metrica in metric_order:
+        if metrica in df_comparacion["Métrica"].unique():
+            fig.add_trace(go.Bar(
+                x=df_comparacion["Modelo"].unique(),
+                y=[df_comparacion[(df_comparacion["Modelo"]==modelo) & (df_comparacion["Métrica"]==metrica)]["Valor"].values[0] if metrica in df_comparacion[df_comparacion["Modelo"]==modelo]["Métrica"].values else 0 for modelo in df_comparacion["Modelo"].unique()],
+                name=metrica
+            ))
     fig.update_layout(barmode='group', title="Comparación de métricas por modelo", yaxis=dict(title="Valor"), xaxis=dict(title="Modelo"), template="plotly_white")
     st.plotly_chart(fig, use_container_width=True)
