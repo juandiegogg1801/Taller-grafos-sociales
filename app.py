@@ -106,13 +106,46 @@ model_option = st.selectbox("Selecciona modelo", ["GCN","GraphSAGE","GAT"])
 embedding_dim = 64
 num_features = data.x.shape[1]
 
+class GCNModel(torch.nn.Module):
+    def __init__(self, num_features, embedding_dim):
+        super().__init__()
+        self.conv1 = GCNConv(num_features, 2 * embedding_dim)
+        self.conv2 = GCNConv(2 * embedding_dim, embedding_dim)
+    def forward(self, x, edge_index):
+        x = self.conv1(x, edge_index)
+        x = torch.relu(x)
+        x = self.conv2(x, edge_index)
+        return x
+
+class GraphSAGEModel(torch.nn.Module):
+    def __init__(self, num_features, embedding_dim):
+        super().__init__()
+        self.conv1 = SAGEConv(num_features, 2 * embedding_dim)
+        self.conv2 = SAGEConv(2 * embedding_dim, embedding_dim)
+    def forward(self, x, edge_index):
+        x = self.conv1(x, edge_index)
+        x = torch.relu(x)
+        x = self.conv2(x, edge_index)
+        return x
+
+class GATModel(torch.nn.Module):
+    def __init__(self, num_features, embedding_dim):
+        super().__init__()
+        self.conv1 = GATConv(num_features, 2 * embedding_dim, heads=2)
+        self.conv2 = GATConv(2 * embedding_dim * 2, embedding_dim, heads=1)
+    def forward(self, x, edge_index):
+        x = self.conv1(x, edge_index)
+        x = torch.relu(x)
+        x = self.conv2(x, edge_index)
+        return x
+
 def get_model(option, num_features, embedding_dim, edge_index=None):
     if option=="GCN":
-        return GCNConv(num_features, embedding_dim)
+        return GCNModel(num_features, embedding_dim)
     elif option=="GraphSAGE":
-        return SAGEConv(num_features, embedding_dim)
+        return GraphSAGEModel(num_features, embedding_dim)
     elif option=="GAT":
-        return GATConv(num_features, embedding_dim, heads=2)
+        return GATModel(num_features, embedding_dim)
 
 model = get_model(model_option, num_features, embedding_dim, edge_index=data.edge_index)
 
@@ -226,7 +259,7 @@ def train_and_evaluate(_model, data, epochs=50, ks=None):
         metric_names += [f"MRR@{k}", f"MAP@{k}", f"NDCG@{k}", f"Precision@{k}", f"Recall@{k}", f"HR@{k}"]
         metric_values += [mrr_list[i], map_list[i], ndcg_list[i], precision_list[i], recall_list[i], hr_list[i]]
     metrics_df = pd.DataFrame({"Métrica": metric_names, "Valor": metric_values})
-    return model, metrics_df
+    return z, metrics_df
 
 if st.button("Entrenar modelo"):
     with st.spinner("⚡ Entrenando y evaluando..."):
