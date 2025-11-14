@@ -162,37 +162,17 @@ def train_and_evaluate(_model, data, epochs=50, ks=None):
     y_scores = np.concatenate([pos_scores, neg_scores])
 
     # Métricas globales
-    from sklearn.metrics import roc_auc_score, f1_score, average_precision_score
+    from sklearn.metrics import roc_auc_score, f1_score
     auc = roc_auc_score(y_true, y_scores)
-    ap = average_precision_score(y_true, y_scores)
     threshold = np.median(y_scores)
     y_pred = (y_scores >= threshold).astype(int)
     f1 = f1_score(y_true, y_pred)
 
-    # MRR
-    def mrr_score(y_true, y_score):
-        order = np.argsort(y_score)[::-1]
-        y_true = np.take(y_true, order)
-        ranks = np.where(y_true == 1)[0]
-        return 1.0/(ranks[0]+1) if len(ranks)>0 else 0
-    mrr = mrr_score(y_true, y_scores)
-
     # Métricas de recomendación por usuario
-    precision_list = []
-    recall_list = []
-    ndcg_list = []
-    map_list = []
-    hr_list = []
-    mrr_list = []
-    ap_list = []  # Inicialización correcta
+    from sklearn.metrics import ndcg_score
+    precision_list, recall_list, ndcg_list, map_list, hr_list, mrr_list = [], [], [], [], [], []
     for k in ks:
-        precision_k = []
-        recall_k = []
-        ndcg_k = []
-        map_k = []
-        hr_k = []
-        mrr_k = []
-        ap_k = []
+        precisions, recalls, ndcgs, maps, hrs, mrrs = [], [], [], [], [], []
         for u in range(num_nodes):
             mask_pos = (test_edges[:,0]==u)
             pos_idx = torch.where(mask_pos)[0]
@@ -206,43 +186,47 @@ def train_and_evaluate(_model, data, epochs=50, ks=None):
             top_k = [i for i,_ in candidates_sorted[:k]]
             true_friends = set(test_edges[pos_idx][:,1].cpu().numpy())
             hits = len(set(top_k) & true_friends)
-            precision_k.append(hits / k)
-            recall_k.append(hits / len(true_friends) if len(true_friends)>0 else 0)
-            hr_k.append(1 if hits>0 else 0)
+            precision = hits / k
+            recall = hits / len(true_friends) if len(true_friends)>0 else 0
+            hr = 1 if hits>0 else 0
             rel = [1 if i in true_friends else 0 for i,_ in candidates_sorted[:k]]
+            # NDCG@k
             if sum(rel)>0 and len(top_k) > 1:
-                ndcg_k.append(ndcg_score([rel], [scores[top_k]]))
+                ndcg = ndcg_score([rel], [scores[top_k]])
             else:
-                ndcg_k.append(0)
-            ap_user = 0
+                ndcg = 0
+            # MRR@k por usuario
+            ranks = [idx+1 for idx, i in enumerate(top_k) if i in true_friends]
+            mrr = 1.0/ranks[0] if ranks else 0
+            # MAP@k por usuario
+            ap = 0
             num_rel = 0
-            precisiones = []
-            num_hits = 0
             for idx, i in enumerate(top_k):
                 if i in true_friends:
-                    num_hits += 1
-                    precisiones.append(num_hits/(idx+1))
-            ap_user = np.mean(precisiones) if precisiones else 0
-            ap_k.append(ap_user)
-            map_k.append(ap_user)
-            ranks = [idx+1 for idx, i in enumerate(top_k) if i in true_friends]
-            if ranks:
-                mrr_k.append(1.0/min(ranks))
-            else:
-                mrr_k.append(0)
-        precision_list.append(np.mean(precision_k) if precision_k else 0)
-        recall_list.append(np.mean(recall_k) if recall_k else 0)
-        ndcg_list.append(np.mean(ndcg_k) if ndcg_k else 0)
-        map_list.append(np.mean(map_k) if map_k else 0)
-        hr_list.append(np.mean(hr_k) if hr_k else 0)
-        mrr_list.append(np.mean(mrr_k) if mrr_k else 0)
-        ap_list.append(np.mean(ap_k) if ap_k else 0)
-    metrics_table = pd.DataFrame({
-        "Métrica": ["AUC", "F1"] + [f"MRR@{k}" for k in ks] + [f"AP@{k}" for k in ks] + [f"MAP@{k}" for k in ks] + [f"NDCG@{k}" for k in ks] + [f"Precision@{k}" for k in ks] + [f"Recall@{k}" for k in ks] + [f"HR@{k}" for k in ks],
-        "Valor": [auc, f1] + mrr_list + ap_list + map_list + ndcg_list + precision_list + recall_list + hr_list
-    })
-    metrics_table["Valor"] = metrics_table["Valor"].map(lambda x:f"{x:.4f}")
-    return z, metrics_table
+                    num_rel += 1
+                    ap += num_rel / (idx+1)
+            map_user = ap / len(true_friends) if len(true_friends)>0 else 0
+            precisions.append(precision)
+            recalls.append(recall)
+            ndcgs.append(ndcg)
+            maps.append(map_user)
+            hrs.append(hr)
+            mrrs.append(mrr)
+        precision_list.append(np.mean(precisions))
+        recall_list.append(np.mean(recalls))
+        ndcg_list.append(np.mean(ndcgs))
+        map_list.append(np.mean(maps))
+        hr_list.append(np.mean(hrs))
+        mrr_list.append(np.mean(mrrs))
+
+    # Construcción del DataFrame de métricas en orden
+    metric_names = ["AUC", "F1"]
+    metric_values = [auc, f1]
+    for i, k in enumerate(ks):
+        metric_names += [f"MRR@{k}", f"MAP@{k}", f"NDCG@{k}", f"Precision@{k}", f"Recall@{k}", f"HR@{k}"]
+        metric_values += [mrr_list[i], map_list[i], ndcg_list[i], precision_list[i], recall_list[i], hr_list[i]]
+    metrics_df = pd.DataFrame({"Métrica": metric_names, "Valor": metric_values})
+    return model, metrics_df
 
 if st.button("Entrenar modelo"):
     with st.spinner("⚡ Entrenando y evaluando..."):
