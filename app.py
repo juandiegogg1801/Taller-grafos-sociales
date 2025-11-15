@@ -1,3 +1,8 @@
+"""
+Recomendador de amigos en grafos usando GNN y métricas de recomendación.
+Autor: juan-diego
+Fecha: 2025-11-14
+"""
 import streamlit as st
 import pandas as pd
 import networkx as nx
@@ -11,6 +16,11 @@ import numpy as np
 import random
 import plotly.graph_objects as go
 import matplotlib.pyplot as plt
+
+# Fijar semilla para reproducibilidad
+random.seed(42)
+torch.manual_seed(42)
+np.random.seed(42)
 
 st.set_page_config(page_title="Recomendador de Amigos Final", layout="wide")
 st.title("💡 Recomendador de Amigos con Link Prediction - Final")
@@ -28,14 +38,26 @@ if dataset_option == "Cargar CSV":
 
 @st.cache_data
 def load_dataset(option, uploaded_file=None):
-    if option == "Cargar CSV" and uploaded_file:
-        df = pd.read_csv(uploaded_file)
-        G = nx.from_pandas_edgelist(df, 'src', 'dst')
-    else:  # SNAP Facebook
-        # Leer el archivo dataset_snap_facebook.csv (formato src,dst)
-        snap_path = "dataset_snap_facebook.csv"
-        df = pd.read_csv(snap_path)
-        G = nx.from_pandas_edgelist(df, 'src', 'dst')
+    """
+    Carga el dataset seleccionado y lo convierte en grafo NetworkX.
+    Args:
+        option (str): Opción de dataset.
+        uploaded_file: Archivo CSV subido por el usuario.
+    Returns:
+        df: DataFrame de aristas.
+        G: Grafo NetworkX.
+    """
+    try:
+        if option == "Cargar CSV" and uploaded_file:
+            df = pd.read_csv(uploaded_file)
+            G = nx.from_pandas_edgelist(df, 'src', 'dst')
+        else:  # SNAP Facebook
+            snap_path = "dataset_snap_facebook.csv"
+            df = pd.read_csv(snap_path)
+            G = nx.from_pandas_edgelist(df, 'src', 'dst')
+    except Exception as e:
+        st.error(f"Error cargando el dataset: {e}")
+        df, G = pd.DataFrame(), nx.Graph()
     return df, G
 
 df_edges, G = load_dataset(dataset_option, uploaded_file)
@@ -52,7 +74,6 @@ max_nodes_original = st.slider("Nodos a mostrar (grafo original)", 100, 1000, 50
 sub_nodes_original = list(G.nodes())[:max_nodes_original]
 subG_original = G.subgraph(sub_nodes_original)
 
-import numpy as np
 pos_original = nx.spring_layout(subG_original, seed=42)
 x_coords_original = np.array([pos_original[n][0] for n in subG_original.nodes])
 y_coords_original = np.array([pos_original[n][1] for n in subG_original.nodes])
@@ -69,7 +90,6 @@ for u, v in subG_original.edges:
     edge_x_original += [x0, x1, None]
     edge_y_original += [y0, y1, None]
 
-import plotly.graph_objects as go
 fig_original = go.Figure()
 fig_original.add_trace(go.Scatter(x=edge_x_original, y=edge_y_original, mode='lines', line=dict(color='#888', width=1), hoverinfo='none', showlegend=False))
 fig_original.add_trace(go.Scatter(x=x_coords_original, y=y_coords_original, mode='markers', marker=dict(size=node_sizes_original, color=node_colors_original, line=dict(width=1, color='white')), text=node_text_original, hoverinfo='text', showlegend=False))
@@ -86,6 +106,14 @@ if not hasattr(data, 'x') or data.x is None:
     data.x = torch.ones((data.num_nodes,1),dtype=torch.float)
 
 def train_test_split_edges(data, test_ratio=0.2):
+    """
+    Divide las aristas en entrenamiento y prueba.
+    Args:
+        data: Objeto Data de PyG.
+        test_ratio: Proporción de aristas para prueba.
+    Returns:
+        data_train: Objeto Data con aristas de entrenamiento y prueba.
+    """
     edges_list = data.edge_index.t().tolist()
     random.shuffle(edges_list)
     num_test = int(len(edges_list)*test_ratio)
@@ -117,17 +145,6 @@ class GCNModel(torch.nn.Module):
         x = self.conv2(x, edge_index)
         return x
 
-class GraphSAGEModel(torch.nn.Module):
-    def __init__(self, num_features, embedding_dim):
-        super().__init__()
-        self.conv1 = SAGEConv(num_features, 2 * embedding_dim)
-        self.conv2 = SAGEConv(2 * embedding_dim, embedding_dim)
-    def forward(self, x, edge_index):
-        x = self.conv1(x, edge_index)
-        x = torch.relu(x)
-        x = self.conv2(x, edge_index)
-        return x
-
 class GATModel(torch.nn.Module):
     def __init__(self, num_features, embedding_dim):
         super().__init__()
@@ -146,6 +163,17 @@ def get_model(option, num_features, embedding_dim, edge_index=None):
         return GraphSAGEModel(num_features, embedding_dim)
     elif option=="GAT":
         return GATModel(num_features, embedding_dim)
+
+class GraphSAGEModel(torch.nn.Module):
+    def __init__(self, num_features, embedding_dim):
+        super().__init__()
+        self.conv1 = SAGEConv(num_features, 2 * embedding_dim)
+        self.conv2 = SAGEConv(2 * embedding_dim, embedding_dim)
+    def forward(self, x, edge_index):
+        x = self.conv1(x, edge_index)
+        x = torch.relu(x)
+        x = self.conv2(x, edge_index)
+        return x
 
 model = get_model(model_option, num_features, embedding_dim, edge_index=data.edge_index)
 
@@ -422,6 +450,7 @@ if st.button("Comparar modelos automáticamente"):
     df_comparacion_pivot = df_comparacion.pivot(index="Modelo", columns="Métrica", values="Valor")
     df_comparacion_pivot = df_comparacion_pivot[[col for col in metric_order if col in df_comparacion_pivot.columns]]
     st.dataframe(df_comparacion_pivot, use_container_width=True)
+
     # Gráfica comparativa
     fig = go.Figure()
     for metrica in metric_order:
